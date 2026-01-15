@@ -16,12 +16,18 @@ class MusicProvider with ChangeNotifier {
   Duration _duration = Duration.zero;
 
   MusicProvider() {
+    _audioPlayer.setLoopMode(LoopMode.all); // Enable looping by default
+    
     _audioPlayer.playerStateStream.listen((state) {
       _isPlaying = state.playing;
       notifyListeners();
-      
-      if (state.processingState == ProcessingState.completed) {
-        next();
+    });
+
+    _audioPlayer.currentIndexStream.listen((index) {
+      if (index != null && _playlist.isNotEmpty && index < _playlist.length) {
+        _currentIndex = index;
+        _currentSong = _playlist[index];
+        notifyListeners();
       }
     });
 
@@ -42,27 +48,37 @@ class MusicProvider with ChangeNotifier {
   Duration get duration => _duration;
 
   Future<void> playSong(Song song, List<Song> playlist) async {
-    _currentSong = song;
+    final bool isSamePlaylist = _playlist.length == playlist.length && 
+                                _playlist.every((s) => playlist.any((p) => p.id == s.id));
+    
     _playlist = playlist;
+    _currentSong = song;
     _currentIndex = _playlist.indexWhere((s) => s.id == song.id);
     notifyListeners();
 
     try {
-      final url = ApiService.getStreamUrl(song.id);
-      
-      // Use AudioSource to provide metadata for background playback
-      final source = AudioSource.uri(
-        Uri.parse(url),
-        tag: MediaItem(
-          id: song.id,
-          title: song.title,
-          artist: song.artist,
-          artUri: song.coverArt != null ? Uri.parse(song.coverArt!) : null,
-          album: song.album,
-        ),
-      );
+      if (!isSamePlaylist || _audioPlayer.audioSource == null) {
+        // Build playlist source for pre-buffering
+        final sources = _playlist.map((s) {
+          return AudioSource.uri(
+            Uri.parse(ApiService.getStreamUrl(s.id)),
+            tag: MediaItem(
+              id: s.id,
+              title: s.title,
+              artist: s.artist,
+              artUri: s.coverArt != null ? Uri.parse(s.coverArt!) : null,
+              album: s.album,
+            ),
+          );
+        }).toList();
 
-      await _audioPlayer.setAudioSource(source);
+        final playlistSource = ConcatenatingAudioSource(children: sources);
+        await _audioPlayer.setAudioSource(playlistSource, initialIndex: _currentIndex);
+      } else {
+        // Just seek if playlist is same
+        await _audioPlayer.seek(Duration.zero, index: _currentIndex);
+      }
+      
       await _audioPlayer.play();
       ApiService.recordPlay(song.id);
     } catch (e) {
@@ -83,16 +99,19 @@ class MusicProvider with ChangeNotifier {
   }
 
   Future<void> next() async {
-    if (_playlist.isEmpty) return;
-    if (_currentIndex < _playlist.length - 1) {
-      await playSong(_playlist[_currentIndex + 1], _playlist);
+    if (_audioPlayer.hasNext) {
+      await _audioPlayer.seekToNext();
+    } else if (_playlist.isNotEmpty) {
+      // Loop manually if needed (though LoopMode.all handles it)
+      await _audioPlayer.seek(Duration.zero, index: 0);
     }
   }
 
   Future<void> previous() async {
-    if (_playlist.isEmpty) return;
-    if (_currentIndex > 0) {
-      await playSong(_playlist[_currentIndex - 1], _playlist);
+    if (_audioPlayer.hasPrevious) {
+      await _audioPlayer.seekToPrevious();
+    } else if (_playlist.isNotEmpty) {
+      await _audioPlayer.seek(Duration.zero, index: _playlist.length - 1);
     }
   }
 }
