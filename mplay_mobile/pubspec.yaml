@@ -1,0 +1,31 @@
+name: mplay_mobile
+description: A new Flutter project for mPlay.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  http: ^1.1.0
+  web_socket_channel: ^2.4.0
+  provider: ^6.0.5
+  google_fonts: ^6.1.0
+  file_picker: ^6.1.1
+  just_audio: ^0.9.36
+  just_audio_background: ^0.0.1-beta.11
+  audio_session: ^0.1.18
+  flutter_animate: ^4.2.0
+  glassmorphism: ^3.0.0
+  percent_indicator: ^4.2.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
