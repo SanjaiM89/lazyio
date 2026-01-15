@@ -26,13 +26,15 @@ class TelegramClientWrapper:
         if not all([API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL]):
             raise ValueError("Missing Telegram Config (API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL)")
         
-        # Use in_memory session - peer cache stored separately in MongoDB
+        # Use in_memory session on Render, disk session locally
+        is_render = os.getenv("RENDER") == "true"
+        
         self.app = Client(
             name="SpotifyCloneBot",
             api_id=int(API_ID),
             api_hash=API_HASH,
             bot_token=BOT_TOKEN,
-            in_memory=True,
+            in_memory=is_render, 
         )
         self.bin_channel = BIN_CHANNEL
         self._main_loop = None
@@ -42,7 +44,7 @@ class TelegramClientWrapper:
         import asyncio
         self._main_loop = asyncio.get_running_loop()
         await self.app.start()
-        print("Telegram Client Started")
+        print(f"Telegram Client Started (Session Mode: {'Memory' if self.app.in_memory else 'Disk'})")
         # Try to resolve and cache the bin_channel peer on startup
         await self._resolve_bin_channel()
 
