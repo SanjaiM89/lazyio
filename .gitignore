@@ -4,3 +4,4 @@ build/
 .dart_tool/
 .idea/
 BackEnd/config.env
+*.session
