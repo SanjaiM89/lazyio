@@ -3,3 +3,4 @@ BackEnd/temp_uploads/
 build/
 .dart_tool/
 .idea/
+BackEnd/config.env
