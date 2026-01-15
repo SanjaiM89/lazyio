@@ -97,6 +97,23 @@ class TelegramClientWrapper:
             return
         except Exception as e:
             print(f"Direct resolution failed: {e}")
+
+        # 3. Try get_chat_member to force resolution (Works for Bots)
+        print("Attempting to resolve via get_chat_member...")
+        try:
+            # Getting 'me' (the bot itself) as a member often forces the peer to be cached
+            me = await self.app.get_me()
+            headers = await self.app.get_chat_member(chat_id, me.id)
+            print(f"Found BIN_CHANNEL via member check: {headers.chat.title}")
+            
+            # Now that we've interacted, resolve_peer should work
+            peer = await self.app.resolve_peer(chat_id)
+            if hasattr(peer, 'access_hash'):
+                await save_peer(raw_channel_id, peer.access_hash)
+                self._channel_access_hash = peer.access_hash
+            return
+        except Exception as e:
+             print(f"Error checking chat member: {e}")
         
         print("WARNING: Could not resolve BIN_CHANNEL. Uploads may fail.")
         print("TIP: Run locally first to seed the peer cache in MongoDB.")
