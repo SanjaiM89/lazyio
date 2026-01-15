@@ -48,23 +48,35 @@ class TelegramClientWrapper:
     async def _resolve_bin_channel(self):
         """Attempt to resolve the bin channel peer on startup."""
         chat_id = self.bin_channel
+        
+        # 1. Try direct get_chat first
         try:
             chat = await self.app.get_chat(chat_id)
             print(f"Resolved BIN_CHANNEL: {chat.title or chat.id}")
             return
         except Exception as e:
-            print(f"Could not resolve BIN_CHANNEL {chat_id}: {e}")
-        
-        # Try with -100 prefix for supergroups/channels
+            print(f"Direct resolution failed for {chat_id}: {e}")
+
+        # 2. Iterate dialogs to populate cache (Crucial for in_memory sessions)
+        print("Iterating dialogs to find BIN_CHANNEL...")
+        try:
+            async for dialog in self.app.get_dialogs(limit=50):
+                if dialog.chat.id == chat_id:
+                     print(f"Found BIN_CHANNEL in dialogs: {dialog.chat.title}")
+                     return
+        except Exception as e:
+             print(f"Error iterating dialogs: {e}")
+
+        # 3. Try fallback with -100 prefix if not already present
         if str(chat_id).startswith("-") and not str(chat_id).startswith("-100"):
             new_id = int(f"-100{abs(chat_id)}")
             try:
                 chat = await self.app.get_chat(new_id)
                 print(f"Resolved BIN_CHANNEL with -100 prefix: {chat.title or chat.id}")
-                self.bin_channel = new_id  # Update to working ID
+                self.bin_channel = new_id
                 return
-            except Exception as ex:
-                print(f"Still could not resolve with -100 prefix: {ex}")
+            except Exception:
+                pass
         
         print("WARNING: Could not resolve BIN_CHANNEL. Uploads may fail.")
         print("IMPORTANT: Make sure the bot is added as an admin to the channel!")
