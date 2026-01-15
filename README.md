@@ -107,6 +107,10 @@ The project consists of two main parts:
 *   **Backend**: Python, FastAPI, Uvicorn, Motor (Async MongoDB)
 *   **External APIs**: Telegram (Telethon), Mistral AI, YouTube (yt-dlp)
 
+## 🙏 Acknowledgements
+
+*   **[fyaz05/FileToLink](https://github.com/fyaz05/FileToLink)**: Huge thanks to this repository! A significant portion of the Telegram storage logic and backend code was adapted from this project. It provided the core foundation for handling Telegram file uploads and streaming.
+
 ## 📄 License
 
 This project is open-source and available for personal use.
