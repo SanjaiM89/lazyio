@@ -70,8 +70,18 @@ class TelegramClientWrapper:
         print("IMPORTANT: Make sure the bot is added as an admin to the channel!")
 
     async def stop(self):
-        await self.app.stop()
-        print("Telegram Client Stopped")
+        try:
+            if self.app.is_connected:
+                await self.app.stop()
+                print("Telegram Client Stopped")
+        except Exception as e:
+            print(f"Error stopping Telegram Client: {e}")
+            # If standard stop fails implies loop issue, force close session
+            try:
+                 if hasattr(self.app, 'session'):
+                    await self.app.session.close()
+            except:
+                pass
 
     def _sanitize_filename(self, filename: str) -> str:
         """Remove problematic characters from filename"""
