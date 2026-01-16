@@ -48,20 +48,21 @@ class TelegramClientWrapper:
         async def seeding_handler(client, message):
             from peer_cache import save_peer
 
-                print(f"🎯 msg received from BIN_CHANNEL ({message.chat.title})! Saving access_hash...")
+            print(f"🎯 msg received from BIN_CHANNEL ({message.chat.title})! Saving access_hash...")
+            
+            # Extract raw ID
+            if str(message.chat.id).startswith("-100"):
+                raw_id = int(str(abs(message.chat.id))[3:])
+            else:
+                raw_id = abs(message.chat.id)
                 
-                # Extract raw ID
-                if str(message.chat.id).startswith("-100"):
-                    raw_id = int(str(abs(message.chat.id))[3:])
-                else:
-                    raw_id = abs(message.chat.id)
-                    
-                # Save peer to MongoDB
-                peer = await client.resolve_peer(message.chat.id)
-                if hasattr(peer, 'access_hash'):
-                    await save_peer(raw_id, peer.access_hash)
-                    self._channel_access_hash = peer.access_hash
-                    print("✅ Channel Access Hash saved to MongoDB! You can now deploy to Render.")
+            # Save peer to MongoDB
+            peer = await client.resolve_peer(message.chat.id)
+            if hasattr(peer, 'access_hash'):
+                await save_peer(raw_id, peer.access_hash)
+                self._channel_access_hash = peer.access_hash
+                print("✅ Channel Access Hash saved to MongoDB! You can now deploy to Render.")
+
                     
     async def start(self):
         import asyncio

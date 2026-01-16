@@ -22,5 +22,8 @@ COPY BackEnd/ .
 # Expose the port (Render sets PORT env var, but 8000 is default fallback)
 EXPOSE 8000
 
+# Signal that we are running on Render
+ENV RENDER=true
+
 # Run the application
 CMD ["python", "main.py"]
