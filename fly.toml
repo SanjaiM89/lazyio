@@ -1,0 +1,30 @@
+# Fly.io configuration for Lazyio Backend
+# See https://fly.io/docs/reference/configuration/ for more info
+
+app = "lazyio-backend"
+primary_region = "sin"  # Singapore - closest to India
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  # Note: Set these as secrets instead of env vars:
+  # fly secrets set API_ID=xxx API_HASH=xxx BOT_TOKEN=xxx BIN_CHANNEL=xxx DATABASE_URL=xxx
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Keep running to avoid cold starts
+  auto_start_machines = true
+  min_machines_running = 1    # Always keep 1 instance running
+  
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512  # 512MB should be enough, upgrade if needed

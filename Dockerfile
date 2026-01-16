@@ -22,8 +22,8 @@ COPY BackEnd/ .
 # Expose the port (Render sets PORT env var, but 8000 is default fallback)
 EXPOSE 8000
 
-# Signal that we are running on Render
-ENV RENDER=true
+# Signal that we are running on cloud (works for both Render and Fly.io)
+ENV CLOUD_DEPLOYMENT=true
 
 # Run the application
 CMD ["python", "main.py"]

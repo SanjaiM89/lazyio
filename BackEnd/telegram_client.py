@@ -26,15 +26,15 @@ class TelegramClientWrapper:
         if not all([API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL]):
             raise ValueError("Missing Telegram Config (API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL)")
         
-        # Use in_memory session on Render, disk session locally
-        is_render = os.getenv("RENDER") == "true"
+        # Use in_memory session on cloud deployments, disk session locally
+        is_cloud = os.getenv("CLOUD_DEPLOYMENT") == "true" or os.getenv("FLY_ALLOC_ID") is not None
         
         self.app = Client(
             name="SpotifyCloneBot",
             api_id=int(API_ID),
             api_hash=API_HASH,
             bot_token=BOT_TOKEN,
-            in_memory=is_render, 
+            in_memory=is_cloud, 
         )
         self.bin_channel = BIN_CHANNEL
         self._main_loop = None
