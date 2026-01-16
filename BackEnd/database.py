@@ -588,3 +588,78 @@ async def refill_queue_if_needed(min_songs: int = 10) -> bool:
         return True
     
     return False
+    return False
+
+
+# ==================== App Playlists Collection ====================
+app_playlists_collection = db.get_collection("app_playlists")
+
+async def get_app_playlists() -> list:
+    """Get all app playlists"""
+    cursor = app_playlists_collection.find().sort("created_at", -1)
+    playlists = []
+    async for p in cursor:
+        p["id"] = str(p["_id"])
+        del p["_id"]
+        playlists.append(p)
+    return playlists
+
+async def create_app_playlist(name: str, song_ids: list, description: str = "", cover_image: str = None) -> str:
+    """Create a new app playlist"""
+    from datetime import datetime
+    
+    # If no cover image, try to get one from first song
+    if not cover_image and song_ids:
+        first_song = await get_song_by_id(song_ids[0])
+        if first_song:
+            cover_image = first_song.get("cover_art")
+
+    result = await app_playlists_collection.insert_one({
+        "name": name,
+        "description": description,
+        "song_ids": song_ids,
+        "cover_image": cover_image,
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow()
+    })
+    return str(result.inserted_id)
+
+async def get_playlist_with_songs(playlist_id: str) -> dict:
+    """Get playlist details with full song objects"""
+    try:
+        playlist = await app_playlists_collection.find_one({"_id": ObjectId(playlist_id)})
+        if not playlist:
+            return None
+        
+        playlist["id"] = str(playlist["_id"])
+        del playlist["_id"]
+        
+        full_songs = []
+        for sid in playlist.get("song_ids", []):
+            s = await get_song_by_id(sid)
+            if s:
+                full_songs.append(s)
+        
+        playlist["songs"] = full_songs
+        return playlist
+    except:
+        return None
+
+async def init_default_playlists():
+    """Initialize some default playlists if none exist"""
+    count = await app_playlists_collection.count_documents({})
+    if count == 0:
+        all_songs = await get_all_songs()
+        if not all_songs:
+            return
+            
+        import random
+        # Create "Recently Added"
+        recent = sorted(all_songs, key=lambda x: x.get("id", ""), reverse=True)[:10]
+        if recent:
+            await create_app_playlist("Fresh Arrivals", [s["id"] for s in recent], "Newest tracks in your library")
+            
+        # Create a random mix
+        if len(all_songs) >= 5:
+            mix = random.sample(all_songs, min(15, len(all_songs)))
+            await create_app_playlist("Random Mix", [s["id"] for s in mix], "A bit of everything")

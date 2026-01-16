@@ -47,6 +47,14 @@ class MusicProvider with ChangeNotifier {
   Duration get position => _position;
   Duration get duration => _duration;
 
+  void setPlaylist(List<Song> songs) {
+    _playlist = songs;
+    // Don't necessarily reset current index if we just want to update the context,
+    // but usually setting a new playlist implies a fresh start or context switch.
+    // For now, simple assignment.
+    notifyListeners();
+  }
+
   Future<void> playSong(Song song, List<Song> playlist) async {
     final bool isSamePlaylist = _playlist.length == playlist.length && 
                                 _playlist.every((s) => playlist.any((p) => p.id == s.id));

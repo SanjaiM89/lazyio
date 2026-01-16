@@ -7,6 +7,7 @@ import '../widgets/glass_container.dart';
 import '../widgets/song_tile.dart';
 import '../constants.dart';
 import 'video_player_screen.dart';
+import 'playlist_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int, [String?]) onNavigate;
@@ -19,6 +20,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _data;
+  List<Playlist> _appPlaylists = [];
   bool _loading = true;
 
   @override
@@ -29,18 +31,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      final data = await ApiService.getHomepage();
+      // Load homepage data and playlists in parallel
+      final results = await Future.wait([
+        ApiService.getHomepage(),
+        ApiService.getAppPlaylists(),
+      ]);
+      
       if (mounted) {
         setState(() {
-          _data = data;
+          _data = results[0] as Map<String, dynamic>;
+          _appPlaylists = results[1] as List<Playlist>;
           _loading = false;
         });
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
-      print("Error loading home: $e");
+      print("Error loading home data: $e");
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -214,19 +220,85 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
           
-          // Recommendations
-          if (recommendations.isNotEmpty) ...[
-            const Text("Recommended for You", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          // App Playlists
+          if (_appPlaylists.isNotEmpty) ...[
+            Row(
+              children: [
+                const Text("Curated Playlists", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                     // Generate new random playlist
+                     ApiService.generateAppPlaylist().then((_) => _loadData());
+                  }, 
+                  child: const Text("Generate New", style: TextStyle(color: kPrimaryColor)),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: recommendations.map((rec) => ActionChip(
-                label: Text(rec),
-                backgroundColor: Colors.white.withOpacity(0.05),
-                labelStyle: const TextStyle(color: Colors.white),
-                onPressed: () => widget.onNavigate(2, rec), // Go to YouTube with query
-              )).toList(),
+            SizedBox(
+              height: 180,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _appPlaylists.length,
+                itemBuilder: (context, index) {
+                  final playlist = _appPlaylists[index];
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => PlaylistDetailScreen(playlist: playlist),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      width: 140,
+                      margin: const EdgeInsets.only(right: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: playlist.coverImage != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(playlist.coverImage!),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
+                                color: Colors.white10,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.3),
+                                    blurRadius: 10,
+                                    offset: const Offset(0, 5),
+                                  ),
+                                ],
+                              ),
+                              child: playlist.coverImage == null
+                                  ? const Center(child: Icon(Icons.queue_music, size: 40, color: Colors.white24))
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            playlist.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          Text(
+                            "${playlist.songCount} Songs",
+                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
             ),
             const SizedBox(height: 32),
           ],

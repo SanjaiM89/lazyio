@@ -6,12 +6,14 @@ class SongTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
   final bool isPlaying;
+  final Widget? trailing;
 
   const SongTile({
     super.key,
     required this.song,
     required this.onTap,
     this.isPlaying = false,
+    this.trailing,
   });
 
   @override
@@ -108,6 +110,11 @@ class SongTile extends StatelessWidget {
                 _formatDuration(song.duration),
                 style: const TextStyle(color: Colors.white38, fontSize: 13),
               ),
+              
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing!,
+            ],
           ],
         ),
       ),

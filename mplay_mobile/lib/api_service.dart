@@ -215,4 +215,34 @@ class ApiService {
       }),
     );
   }
+
+  // ==================== App Playlists ====================
+
+  /// Get all app playlists
+  static Future<List<Playlist>> getAppPlaylists() async {
+    final response = await http.get(Uri.parse('$baseUrl/api/app-playlists'));
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((j) => Playlist.fromJson(j)).toList();
+    }
+    return [];
+  }
+
+  /// Get specific playlist with songs
+  static Future<Playlist?> getAppPlaylist(String id) async {
+    final response = await http.get(Uri.parse('$baseUrl/api/app-playlists/$id'));
+    if (response.statusCode == 200) {
+      return Playlist.fromJson(json.decode(response.body));
+    }
+    return null;
+  }
+
+  /// Generate new random playlist
+  static Future<void> generateAppPlaylist() async {
+    await http.post(
+      Uri.parse('$baseUrl/api/app-playlists/generate'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({'name': 'Discovery Mix'}),
+    );
+  }
 }

@@ -98,22 +98,33 @@ class YouTubeTask {
 class Playlist {
   final String id;
   final String name;
+  final String? description;
   final int songCount;
   final List<String> songIds;
+  final String? coverImage;
+  final List<Song>? songs; // Full song objects if available
 
   Playlist({
     required this.id,
     required this.name,
+    this.description,
     required this.songCount,
     required this.songIds,
+    this.coverImage,
+    this.songs,
   });
 
   factory Playlist.fromJson(Map<String, dynamic> json) {
     return Playlist(
-      id: json['id'],
-      name: json['name'],
-      songCount: json['song_count'] ?? 0,
-      songIds: List<String>.from(json['songs'] ?? []),
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown Playlist',
+      description: json['description'],
+      songCount: (json['song_ids'] as List?)?.length ?? 0,
+      songIds: List<String>.from(json['song_ids'] ?? []),
+      coverImage: json['cover_image'],
+      songs: json['songs'] != null 
+          ? (json['songs'] as List).map((j) => Song.fromJson(j)).toList()
+          : null,
     );
   }
 }

@@ -55,6 +55,9 @@ async def lifespan(app: FastAPI):
         await tg_client.start()
     except Exception as e:
         print(f"Failed to start Telegram Client: {e}")
+        
+    # Initialize default playlists
+    await init_default_playlists()
     
     # Start background AI refresh task
     ai_task = asyncio.create_task(refresh_ai_recommendations())
@@ -504,6 +507,53 @@ async def api_queue_signal(song_id: str, request: SignalRequest):
     await refill_queue_if_needed(min_songs=10)
     
     return {"status": "processed", "signal": signal_type, "song_id": song_id}
+
+
+# ==================== App Playlists API ====================
+from database import (
+    get_app_playlists, create_app_playlist, get_playlist_with_songs, init_default_playlists
+)
+from pydantic import BaseModel
+
+@app.get("/api/app-playlists")
+async def api_get_app_playlists():
+    """Get all app playlists"""
+    return await get_app_playlists()
+
+@app.get("/api/app-playlists/{playlist_id}")
+async def api_get_app_playlist(playlist_id: str):
+    """Get specific playlist with full song details"""
+    playlist = await get_playlist_with_songs(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return playlist
+
+class GeneratePlaylistRequest(BaseModel):
+    name: str = "New Mix"
+
+@app.post("/api/app-playlists/generate")
+async def api_generate_app_playlist(request: GeneratePlaylistRequest):
+    """Generate a new random playlist"""
+    all_songs = await get_all_songs()
+    if not all_songs:
+        raise HTTPException(status_code=400, detail="No songs in library")
+        
+    import random
+    count = min(15, len(all_songs))
+    selected = random.sample(all_songs, count)
+    
+    # Try to make it somewhat thematic based on a random attribute
+    # e.g. same artist, or just random
+    
+    song_ids = [s["id"] for s in selected]
+    playlist_id = await create_app_playlist(
+        name=request.name,
+        song_ids=song_ids,
+        description="Generated playlist"
+    )
+    
+    return {"status": "created", "id": playlist_id, "count": len(song_ids)}
+
 
 # ==================== YouTube Audio Download API ====================
 from pydantic import BaseModel
