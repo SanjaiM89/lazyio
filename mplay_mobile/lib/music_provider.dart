@@ -98,7 +98,33 @@ class MusicProvider with ChangeNotifier {
     await _audioPlayer.seek(position);
   }
 
+  /// Track if user listened > 60 seconds before skipping
+  Future<void> _reportListenSignal() async {
+    if (_currentSong == null) return;
+    
+    final listenedSeconds = _position.inSeconds;
+    if (listenedSeconds >= 60) {
+      // Positive signal: listened for > 1 minute
+      try {
+        await ApiService.sendSignal(_currentSong!.id, "listen", durationSeconds: listenedSeconds);
+        await ApiService.markSongPlayed(_currentSong!.id);
+      } catch (e) {
+        print("Error sending listen signal: $e");
+      }
+    } else if (listenedSeconds > 0 && listenedSeconds < 30) {
+      // Skip signal: listened < 30 seconds
+      try {
+        await ApiService.sendSignal(_currentSong!.id, "skip", durationSeconds: listenedSeconds);
+      } catch (e) {
+        print("Error sending skip signal: $e");
+      }
+    }
+  }
+
   Future<void> next() async {
+    // Report listen signal before moving to next
+    await _reportListenSignal();
+    
     if (_audioPlayer.hasNext) {
       await _audioPlayer.seekToNext();
     } else if (_playlist.isNotEmpty) {
@@ -108,6 +134,9 @@ class MusicProvider with ChangeNotifier {
   }
 
   Future<void> previous() async {
+    // Report listen signal before going back
+    await _reportListenSignal();
+    
     if (_audioPlayer.hasPrevious) {
       await _audioPlayer.seekToPrevious();
     } else if (_playlist.isNotEmpty) {

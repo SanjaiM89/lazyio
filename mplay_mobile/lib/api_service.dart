@@ -157,4 +157,62 @@ class ApiService {
     }
     return [];
   }
+
+  /// Get LLM-generated upcoming queue based on current song
+  static Future<Map<String, dynamic>> getUpcomingQueue(String songId) async {
+    final response = await http.get(Uri.parse('$baseUrl/api/upcoming-queue/$songId'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> queue = data['queue'] ?? [];
+      final List<String> suggestions = (data['ai_suggestions'] as List<dynamic>?)
+          ?.map((e) => e.toString())
+          .toList() ?? [];
+      return {
+        'queue': queue.map((j) => Song.fromJson(j)).toList(),
+        'suggestions': suggestions,
+      };
+    }
+    return {'queue': <Song>[], 'suggestions': <String>[]};
+  }
+
+  // ==================== Persistent AI Queue ====================
+
+  /// Get persistent AI queue from MongoDB
+  static Future<List<Song>> getAIQueue() async {
+    final response = await http.get(Uri.parse('$baseUrl/api/ai-queue'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> songs = data['songs'] ?? [];
+      return songs.map((j) => Song.fromJson(j)).toList();
+    }
+    return [];
+  }
+
+  /// Refresh AI queue using LLM and save to MongoDB
+  static Future<List<Song>> refreshAIQueue() async {
+    final response = await http.post(Uri.parse('$baseUrl/api/ai-queue/refresh'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> songs = data['songs'] ?? [];
+      return songs.map((j) => Song.fromJson(j)).toList();
+    }
+    return [];
+  }
+
+  /// Mark song as played (removes from queue)
+  static Future<void> markSongPlayed(String songId) async {
+    await http.post(Uri.parse('$baseUrl/api/ai-queue/mark-played/$songId'));
+  }
+
+  /// Send behavior signal (listen, skip, like, dislike)
+  static Future<void> sendSignal(String songId, String signalType, {int durationSeconds = 0}) async {
+    await http.post(
+      Uri.parse('$baseUrl/api/ai-queue/signal/$songId'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode({
+        'signal_type': signalType,
+        'duration_seconds': durationSeconds,
+      }),
+    );
+  }
 }

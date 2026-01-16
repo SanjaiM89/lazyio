@@ -79,6 +79,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
+  void _showUpcomingQueue() async {
+    if (_currentSongId == null) return;
+    
+    // Show loading sheet
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _UpcomingQueueSheet(
+        songId: _currentSongId!,
+        onSongTap: (song) async {
+          Navigator.pop(ctx);
+          final music = Provider.of<MusicProvider>(context, listen: false);
+          // Fetch current playlist from API
+          final songs = await ApiService.getSongs();
+          music.playSong(song, songs);
+        },
+      ),
+    );
+  }
 
   void _showSongOptionsMenu(BuildContext context, Song song) {
     showModalBottomSheet(
@@ -539,7 +562,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         ),
                         IconButton(
                           icon: const Icon(Icons.playlist_play_rounded),
-                          onPressed: () {},
+                          onPressed: _showUpcomingQueue,
                           color: Colors.white54,
                         ),
                         IconButton(
@@ -568,3 +591,209 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
+
+/// Bottom sheet widget for upcoming queue
+class _UpcomingQueueSheet extends StatefulWidget {
+  final String songId;
+  final Function(Song) onSongTap;
+
+  const _UpcomingQueueSheet({
+    required this.songId,
+    required this.onSongTap,
+  });
+
+  @override
+  State<_UpcomingQueueSheet> createState() => _UpcomingQueueSheetState();
+}
+
+class _UpcomingQueueSheetState extends State<_UpcomingQueueSheet> {
+  List<Song> _queue = [];
+  List<String> _suggestions = [];
+  bool _loading = true;
+  bool _refreshing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadQueue();
+  }
+
+  Future<void> _loadQueue() async {
+    try {
+      // Use persistent AI queue from MongoDB
+      final songs = await ApiService.getAIQueue();
+      if (mounted) {
+        setState(() {
+          _queue = songs;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      print("Error loading queue: $e");
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _refreshQueue() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    
+    try {
+      final songs = await ApiService.refreshAIQueue();
+      if (mounted) {
+        setState(() {
+          _queue = songs;
+          _refreshing = false;
+        });
+      }
+    } catch (e) {
+      print("Error refreshing queue: $e");
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              
+              // Title with refresh button
+              Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: kPrimaryColor, size: 20),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      "AI Generated Queue",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  // Refresh button
+                  IconButton(
+                    onPressed: _refreshing ? null : _refreshQueue,
+                    icon: _refreshing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: kPrimaryColor,
+                            ),
+                          )
+                        : const Icon(Icons.refresh, color: kPrimaryColor),
+                    tooltip: "Refresh queue with AI",
+                  ),
+                ],
+              ),
+              
+              const SizedBox(height: 4),
+              Text(
+                "Queue saves automatically • ${_queue.length} songs",
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+              
+              const SizedBox(height: 12),
+              const Divider(color: Colors.white12),
+
+              
+              // Queue list
+              Expanded(
+                child: _loading
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(color: kPrimaryColor),
+                            SizedBox(height: 16),
+                            Text("AI is thinking...", style: TextStyle(color: Colors.white54)),
+                          ],
+                        ),
+                      )
+                    : _queue.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.library_music, color: Colors.white24, size: 48),
+                                const SizedBox(height: 16),
+                                const Text("No songs in queue", style: TextStyle(color: Colors.white54)),
+                                if (_suggestions.isNotEmpty) ...[
+                                  const SizedBox(height: 16),
+                                  const Text("AI suggests:", style: TextStyle(color: kPrimaryColor)),
+                                  ..._suggestions.take(3).map((s) => Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Text(s, style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                                  )),
+                                ],
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: _queue.length,
+                            itemBuilder: (context, index) {
+                              final song = _queue[index];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: ClipRRect(
+                                  borderRadius: BorderRadius.circular(4),
+                                  child: Container(
+                                    width: 50,
+                                    height: 50,
+                                    color: Colors.white12,
+                                    child: song.coverArt != null
+                                        ? Image.network(song.coverArt!, fit: BoxFit.cover)
+                                        : const Icon(Icons.music_note, color: Colors.white24),
+                                  ),
+                                ),
+                                title: Text(
+                                  song.title,
+                                  style: const TextStyle(color: Colors.white),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                subtitle: Text(
+                                  song.artist,
+                                  style: const TextStyle(color: Colors.white54, fontSize: 12),
+                                ),
+                                trailing: Text(
+                                  "${(song.duration / 60).floor()}:${(song.duration.toInt() % 60).toString().padLeft(2, '0')}",
+                                  style: const TextStyle(color: Colors.white38),
+                                ),
+                                onTap: () => widget.onSongTap(song),
+                              );
+                            },
+                          ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

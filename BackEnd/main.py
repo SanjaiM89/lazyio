@@ -314,6 +314,197 @@ async def api_get_liked_songs():
     """Get all liked songs"""
     songs = await get_liked_songs()
     return {"songs": songs}
+
+
+@app.get("/api/upcoming-queue/{song_id}")
+async def api_get_upcoming_queue(song_id: str):
+    """
+    Get LLM-generated upcoming queue based on current song and liked songs.
+    Returns songs from library that match AI suggestions.
+    """
+    current_song = await get_song_by_id(song_id)
+    if not current_song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    
+    # Get liked songs for context
+    liked_songs = await get_liked_songs()
+    all_songs = await get_all_songs()
+    
+    # Build history from liked songs or all songs
+    history = liked_songs[:5] if liked_songs else all_songs[:5]
+    
+    # Get AI recommendations
+    ai_suggestions = await get_music_recommendations(current_song, history)
+    
+    # Match suggestions to songs in library
+    matches = []
+    for suggestion in ai_suggestions:
+        # Try to find matching song in library
+        parts = suggestion.split(" - ")
+        if len(parts) >= 1:
+            query = parts[0].strip()
+            found = await search_songs(query)
+            # Filter out current song and add unique matches
+            for s in found:
+                if s["id"] != song_id and s["id"] not in [m["id"] for m in matches]:
+                    matches.append(s)
+                    break
+    
+    # If we don't have enough matches, fill with liked songs then random
+    if len(matches) < 5:
+        liked_ids = {m["id"] for m in matches}
+        liked_ids.add(song_id)
+        for s in liked_songs:
+            if s["id"] not in liked_ids:
+                matches.append(s)
+                liked_ids.add(s["id"])
+            if len(matches) >= 10:
+                break
+    
+    return {
+        "ai_suggestions": ai_suggestions,  # Raw LLM suggestions
+        "queue": matches[:10]  # Matched songs from library
+    }
+
+
+# ==================== Persistent AI Queue API ====================
+from database import (
+    get_ai_queue, save_ai_queue, mark_song_played as db_mark_played,
+    get_queue_songs, refill_queue_if_needed, clear_played_queue
+)
+
+
+@app.get("/api/ai-queue")
+async def api_get_ai_queue():
+    """Get current AI queue from MongoDB (persistent)"""
+    # Ensure minimum 10 songs
+    await refill_queue_if_needed(min_songs=10)
+    
+    queue_data = await get_ai_queue()
+    songs = await get_queue_songs()
+    
+    return {
+        "songs": songs,
+        "played_count": len(queue_data["played_ids"]),
+        "created_at": str(queue_data["created_at"]) if queue_data["created_at"] else None,
+        "updated_at": str(queue_data["updated_at"]) if queue_data["updated_at"] else None,
+    }
+
+
+@app.post("/api/ai-queue/refresh")
+async def api_refresh_ai_queue():
+    """Regenerate AI queue using LLM and save to MongoDB"""
+    # Get liked songs for personalization
+    liked_songs = await get_liked_songs()
+    all_songs = await get_all_songs()
+    
+    if not all_songs:
+        return {"status": "error", "message": "No songs in library"}
+    
+    # Build history from liked songs
+    history = liked_songs[:5] if liked_songs else all_songs[:5]
+    import random
+    sample_song = random.choice(liked_songs) if liked_songs else random.choice(all_songs)
+    
+    # Get AI suggestions
+    ai_suggestions = await get_music_recommendations(sample_song, history)
+    
+    # Match to library songs
+    matched_ids = []
+    for suggestion in ai_suggestions:
+        parts = suggestion.split(" - ")
+        if parts:
+            query = parts[0].strip()
+            found = await search_songs(query)
+            for s in found:
+                if s["id"] not in matched_ids:
+                    matched_ids.append(s["id"])
+                    break
+    
+    # Add liked songs
+    for s in liked_songs:
+        if s["id"] not in matched_ids:
+            matched_ids.append(s["id"])
+        if len(matched_ids) >= 15:
+            break
+    
+    # Fill remaining with random songs
+    if len(matched_ids) < 10:
+        random.shuffle(all_songs)
+        for s in all_songs:
+            if s["id"] not in matched_ids:
+                matched_ids.append(s["id"])
+            if len(matched_ids) >= 15:
+                break
+    
+    # Clear played and save new queue
+    await clear_played_queue()
+    await save_ai_queue(matched_ids)
+    
+    # Get full song objects
+    songs = await get_queue_songs()
+    
+    return {
+        "status": "refreshed",
+        "count": len(songs),
+        "songs": songs,
+        "ai_suggestions": ai_suggestions,
+    }
+
+
+@app.post("/api/ai-queue/mark-played/{song_id}")
+async def api_mark_song_played(song_id: str):
+    """Mark a song as played (removes from queue)"""
+    await db_mark_played(song_id)
+    await refill_queue_if_needed(min_songs=10)
+    return {"status": "marked", "song_id": song_id}
+
+
+from pydantic import BaseModel as PydanticBaseModel
+
+class SignalRequest(PydanticBaseModel):
+    signal_type: str  # "listen", "skip", "like", "dislike"
+    duration_seconds: int = 0  # For listen signals
+
+
+@app.post("/api/ai-queue/signal/{song_id}")
+async def api_queue_signal(song_id: str, request: SignalRequest):
+    """
+    Report user behavior signal for smart queue updates.
+    - listen: played > 60 seconds (positive signal)
+    - skip: skipped before 60 seconds (negative signal)  
+    - like/dislike: explicit preference
+    """
+    signal_type = request.signal_type
+    duration = request.duration_seconds
+    
+    song = await get_song_by_id(song_id)
+    if not song:
+        return {"status": "error", "message": "Song not found"}
+    
+    if signal_type == "listen" and duration >= 60:
+        # Positive signal: mark as played and potentially add similar
+        await db_mark_played(song_id)
+        # Could enhance: add similar songs to queue based on this
+        
+    elif signal_type == "skip":
+        # Negative signal: just mark as played to remove from queue
+        await db_mark_played(song_id)
+        
+    elif signal_type == "like":
+        # Already handled by like API, but refill queue
+        await like_song(song_id)
+        
+    elif signal_type == "dislike":
+        # Remove from queue and don't suggest similar
+        await dislike_song(song_id)
+        await db_mark_played(song_id)
+    
+    # Ensure queue stays filled
+    await refill_queue_if_needed(min_songs=10)
+    
+    return {"status": "processed", "signal": signal_type, "song_id": song_id}
+
 # ==================== YouTube Audio Download API ====================
 from pydantic import BaseModel
 from youtube_downloader import youtube_downloader, get_task, DownloadStatus
