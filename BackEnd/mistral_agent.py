@@ -135,6 +135,18 @@ def _calculate_similarity_score(song: Dict, liked_songs: List[Dict], all_songs: 
         score += recency_score * 2
     except StopIteration:
         pass
+
+    # ---- 7. PLAY COUNT BOOST (Weight: 20) ----
+    # Heavily favor songs the user actually listens to
+    play_count = song.get("play_count", 0)
+    if play_count > 0:
+        # Logarithmic-like boost: 1 play=2pts, 5 plays=5pts, 20 plays=10pts, 50+=20pts
+        if play_count < 5:
+            score += play_count * 2
+        elif play_count < 20:
+            score += 10 + (play_count - 5) * 0.5
+        else:
+            score += 20
     
     return score
 
@@ -219,7 +231,7 @@ async def get_music_recommendations(current_song: Dict, history: List[Dict], all
             return [f"{s.get('title', 'Unknown')} - {s.get('artist', 'Unknown')}" for s in recs]
         return []
     
-    history_str = "\n".join([f"- {s.get('title', 'Unknown')} by {s.get('artist', 'Unknown')}" for s in history[-5:]])
+    history_str = "\n".join([f"- {s.get('title', 'Unknown')} by {s.get('artist', 'Unknown')} (Played {s.get('play_count', 0)} times)" for s in history[-5:]])
     current_str = f"{current_song.get('title', 'Unknown')} by {current_song.get('artist', 'Unknown')}"
     
     # Build list of songs to exclude

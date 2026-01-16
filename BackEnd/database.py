@@ -155,7 +155,17 @@ async def get_playlists(page: int = 1, limit: int = 10) -> dict:
     
     playlists = []
     async for pl in playlists_collection.find().sort("created_at", -1).skip(skip).limit(limit):
-        playlists.append(playlist_helper(pl))
+        p_data = playlist_helper(pl)
+        
+        # Fetch cover art from first song if available
+        if p_data.get("songs") and len(p_data["songs"]) > 0:
+            first_song_id = p_data["songs"][0]
+            # Verify song exists and get cover
+            song = await get_song_by_id(first_song_id)
+            if song and song.get("cover_art"):
+                p_data["cover_image"] = song["cover_art"]
+        
+        playlists.append(p_data)
     
     return {
         "playlists": playlists,
@@ -216,6 +226,15 @@ async def record_play(song_id: str):
         "song_id": song_id,
         "played_at": datetime.utcnow()
     })
+    
+    # Increment play count on song
+    try:
+        await songs_collection.update_one(
+            {"_id": ObjectId(song_id)},
+            {"$inc": {"play_count": 1}}
+        )
+    except Exception as e:
+        print(f"Error incrementing play count: {e}")
 
 
 async def get_recently_played(limit: int = 10) -> list:

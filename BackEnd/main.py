@@ -952,10 +952,7 @@ async def import_app_playlist(playlist_id: str):
     return {"status": "success", "id": new_id, "name": name}
 
 
-@app.get("/api/playlists")
-async def list_playlists(page: int = 1, limit: int = 10):
-    """Get paginated playlists"""
-    return await get_playlists(page=page, limit=limit)
+
 
 
 @app.post("/api/playlists")

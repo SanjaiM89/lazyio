@@ -115,16 +115,30 @@ class Playlist {
   });
 
   factory Playlist.fromJson(Map<String, dynamic> json) {
+    var rawSongs = json['songs'];
+    List<Song>? parsedSongs;
+    
+    if (rawSongs is List) {
+      if (rawSongs.isNotEmpty && rawSongs.first is Map) {
+        // It's a list of Song objects
+        parsedSongs = rawSongs.map((j) => Song.fromJson(j)).toList();
+      } 
+      // If it's a list of Strings, it's just IDs, so parsedSongs remains null
+      // The IDs are captured in songIds below
+    }
+
     return Playlist(
       id: json['id'] ?? '',
       name: json['name'] ?? 'Unknown Playlist',
       description: json['description'],
-      songCount: (json['song_ids'] as List?)?.length ?? 0,
-      songIds: List<String>.from(json['song_ids'] ?? []),
+      songCount: (json['song_ids'] as List?)?.length ?? (json['songs'] as List?)?.length ?? 0,
+      songIds: json['song_ids'] != null 
+          ? List<String>.from(json['song_ids'])
+          : (rawSongs is List && rawSongs.isNotEmpty && rawSongs.first is String)
+              ? List<String>.from(rawSongs)
+              : [],
       coverImage: json['cover_image'],
-      songs: json['songs'] != null 
-          ? (json['songs'] as List).map((j) => Song.fromJson(j)).toList()
-          : null,
+      songs: parsedSongs,
     );
   }
 }

@@ -10,6 +10,7 @@ import 'screens/youtube_screen.dart';
 import 'screens/upload_screen.dart';
 import 'websocket_service.dart';
 import 'widgets/mini_player.dart';
+import 'library_provider.dart';
 
 Future<void> main() async {
   await JustAudioBackground.init(
@@ -21,6 +22,7 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => MusicProvider()),
+        ChangeNotifierProvider(create: (_) => LibraryProvider()),
       ],
       child: const MyApp(),
     ),
@@ -104,8 +106,12 @@ class _MainScreenState extends State<MainScreen> {
     // Listen for library updates
     _wsService.onLibraryUpdate = (data) {
       print("WS Library Update Received: Refreshing views");
+      // Silent refresh via provider
+      Provider.of<LibraryProvider>(context, listen: false).refreshData();
+      
+      // Still rebuild Home as it doesn't use provider yet (or does it? Home uses its own loadData. 
+      // Ideally Home should also use a provider, but for now let's keep the key for Home)
       setState(() {
-        _libraryKey = UniqueKey();
         _homeKey = UniqueKey();
       });
     };
@@ -115,8 +121,8 @@ class _MainScreenState extends State<MainScreen> {
       // Backwards compatibility - string events
       if (msg == 'library_updated' || msg == 'song_added') {
         print("WS Update Received: Refreshing views");
+        Provider.of<LibraryProvider>(context, listen: false).refreshData();
         setState(() {
-          _libraryKey = UniqueKey();
           _homeKey = UniqueKey();
         });
       }
@@ -145,7 +151,7 @@ class _MainScreenState extends State<MainScreen> {
     // Rebuild pages when keys change
     final pages = [
       HomeScreen(key: _homeKey, onNavigate: _handleNavigation),
-      LibraryScreen(key: _libraryKey),
+      const LibraryScreen(), // No key needed as it handles its own state via Provider
       YouTubeScreen(initialQuery: _youtubeQuery),
       const UploadScreen(),
     ];
