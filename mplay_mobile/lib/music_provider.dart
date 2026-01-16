@@ -46,6 +46,7 @@ class MusicProvider with ChangeNotifier {
   bool get isPlaying => _isPlaying;
   Duration get position => _position;
   Duration get duration => _duration;
+  List<Song> get playlist => _playlist;
 
   void setPlaylist(List<Song> songs) {
     _playlist = songs;

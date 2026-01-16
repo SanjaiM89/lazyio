@@ -122,17 +122,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _playAudio(Song song) async {
     try {
-      // Ensure we have the latest song list so the provider can find the index
-      final songs = await ApiService.getSongs();
+      if (!mounted) return;
+      
+      final musicProvider = Provider.of<MusicProvider>(context, listen: false);
+      List<Song> songs = musicProvider.playlist;
+      
+      // Only fetch if playlist is empty, to save time (optimization)
+      if (songs.isEmpty) {
+        songs = await ApiService.getSongs();
+      }
+
       if (mounted) {
-        Provider.of<MusicProvider>(context, listen: false).playSong(song, songs);
+        musicProvider.playSong(song, songs);
         
         // Schedule the pop to avoid _debugLocked assertion if this runs during a build frame
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && Navigator.canPop(context)) {
+        if (Navigator.canPop(context)) {
             Navigator.pop(context);
-          }
-        });
+        }
       }
     } catch (e) {
       print("Error playing audio: $e");
@@ -174,7 +180,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                     scrollNotification.overscroll < 0 && 
                     scrollNotification.dragDetails != null) {
                    // Dragged down from top
-                   _minimize();
+                   // Schedule minimize to avoid build/layout conflicts
+                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                     if (mounted) _minimize();
+                   });
                    return true;
                 }
                 return false;

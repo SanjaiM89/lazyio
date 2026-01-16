@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import '../music_provider.dart';
 import 'glass_container.dart';
 import '../screens/player_screen.dart';
-import '../screens/video_player_screen.dart';
+import '../providers/video_provider.dart';
 import '../constants.dart';
 
 class MiniPlayer extends StatelessWidget {
@@ -24,24 +24,22 @@ class MiniPlayer extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (song.isVideo) {
-            // If it's a video, open Video Player
-             Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => VideoPlayerScreen(song: song),
-              ),
-            );
-          } else {
-            // Audio Player
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (context) => const PlayerScreen(),
-                fullscreenDialog: true,
-              ),
-            );
-          }
-        });
+        if (song.isVideo) {
+          // Play via VideoProvider (Overlay)
+          Provider.of<VideoProvider>(context, listen: false).playVideo(song);
+        } else {
+          // Audio Player - ensure video is closed if we are explicitly opening audio player?
+          // Actually, if we touch the miniplayer and it's audio, video shouldn't be playing anyway.
+          // But to be safe:
+          Provider.of<VideoProvider>(context, listen: false).close();
+          
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => const PlayerScreen(),
+              fullscreenDialog: true,
+            ),
+          );
+        }
       },
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),

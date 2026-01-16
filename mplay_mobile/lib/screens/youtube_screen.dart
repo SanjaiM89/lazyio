@@ -8,6 +8,7 @@ import '../music_provider.dart';
 import '../widgets/glass_container.dart';
 import '../constants.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import '../providers/video_provider.dart';
 import 'video_player_screen.dart';
 
 class YouTubeScreen extends StatefulWidget {
@@ -539,14 +540,12 @@ class _YouTubeScreenState extends State<YouTubeScreen> {
         duration: 0,
         fileName: '${task.title}.mp4',
       );
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => VideoPlayerScreen(song: song),
-        ),
-      );
+      // Use VideoProvider to play
+      Provider.of<MusicProvider>(context, listen: false).stop();
+      Provider.of<VideoProvider>(context, listen: false).playVideo(song);
     } else {
       // Play audio using MusicProvider
+      Provider.of<VideoProvider>(context, listen: false).close();
       _playSongById(task.songId);
     }
   }

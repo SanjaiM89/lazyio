@@ -11,6 +11,8 @@ import 'screens/upload_screen.dart';
 import 'websocket_service.dart';
 import 'widgets/mini_player.dart';
 import 'library_provider.dart';
+import 'providers/video_provider.dart';
+import 'widgets/video_overlay.dart';
 
 Future<void> main() async {
   await JustAudioBackground.init(
@@ -23,6 +25,7 @@ Future<void> main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => MusicProvider()),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(create: (_) => VideoProvider()),
       ],
       child: const MyApp(),
     ),
@@ -174,18 +177,27 @@ class _MainScreenState extends State<MainScreen> {
               index: _selectedIndex,
               children: pages,
             ),
-          // We can put the miniplayer here, aligned to bottom
-          Positioned(
-            left: 0, 
-            right: 0, 
-            bottom: 0, 
-            child: Consumer<MusicProvider>(
-              builder: (context, music, child) {
-                if (music.currentSong == null) return const SizedBox.shrink();
-                return MiniPlayer();
-              },
+            // We can put the miniplayer here, aligned to bottom
+            Positioned(
+              left: 0, 
+              right: 0, 
+              bottom: 0, 
+              child: Consumer<MusicProvider>(
+                builder: (context, music, child) {
+                  // Only show audio miniplayer if we have a song AND video is not maximized/playing?
+                  // Actually, let's stack them. If VideoOverlay is minimized, it sits at bottom.
+                  // If VideoOverlay is maximized, it covers everything.
+                  // If Audio is playing, we show Audio MiniPlayer.
+                  // We should probably rely on providers to handle mutual exclusion if desired.
+                  if (music.currentSong == null) return const SizedBox.shrink();
+                  // Check if VideoProvider is active? 
+                  // For now, let's just show it. If VideoOverlay is on top, it covers it.
+                  return const MiniPlayer(); 
+                },
+              ),
             ),
-          ),
+            // Video Overlay sits on top of everything
+            const VideoOverlay(),
           ],
         ),
       ),

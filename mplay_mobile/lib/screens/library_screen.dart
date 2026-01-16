@@ -6,6 +6,7 @@ import '../music_provider.dart';
 import '../library_provider.dart';
 import '../widgets/song_tile.dart';
 import '../constants.dart';
+import '../providers/video_provider.dart';
 import 'video_player_screen.dart';
 import 'playlist_detail_screen.dart'; // Ensure Import
 
@@ -175,13 +176,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                         isPlaying: music.currentSong?.id == song.id,
                         onTap: () {
                           if (song.isVideo) {
-                             Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => VideoPlayerScreen(song: song),
-                              ),
-                            );
+                            Provider.of<MusicProvider>(context, listen: false).stop();
+                            Provider.of<VideoProvider>(context, listen: false).playVideo(song);
                           } else {
+                            Provider.of<VideoProvider>(context, listen: false).close();
                             music.playSong(song, filteredSongs);
                           }
                         },

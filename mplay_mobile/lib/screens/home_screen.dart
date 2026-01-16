@@ -6,6 +6,7 @@ import '../music_provider.dart';
 import '../widgets/glass_container.dart';
 import '../widgets/song_tile.dart';
 import '../constants.dart';
+import '../providers/video_provider.dart';
 import 'video_player_screen.dart';
 import 'playlist_detail_screen.dart';
 
@@ -105,16 +106,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   final song = recentSongs[index];
                   return GestureDetector(
                     onTap: () {
-                      if (song.fileName.toLowerCase().endsWith('.mp4') || song.fileName.toLowerCase().endsWith('.mkv')) {
-                         Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => VideoPlayerScreen(song: song),
-                          ),
-                        );
-                      } else {
-                        Provider.of<MusicProvider>(context, listen: false).playSong(song, recentSongs);
-                      }
+                         if (song.fileName.toLowerCase().endsWith('.mp4') || song.fileName.toLowerCase().endsWith('.mkv')) {
+                             Provider.of<MusicProvider>(context, listen: false).stop();
+                             Provider.of<VideoProvider>(context, listen: false).playVideo(song);
+                         } else {
+                           Provider.of<VideoProvider>(context, listen: false).close();
+                           Provider.of<MusicProvider>(context, listen: false).playSong(song, recentSongs);
+                         }
                     },
                     child: Container(
                       width: 150,

@@ -304,7 +304,12 @@ class TelegramClientWrapper:
                 chunk = chunk[:remaining_bytes]
             
             if chunk:
-                yield chunk
+                # Yield smaller chunks (e.g., 32KB) to prevent network timeouts
+                # and improve streaming smoothness with pyaes (slower)
+                formatted_chunk_size = 32 * 1024
+                for i in range(0, len(chunk), formatted_chunk_size):
+                    yield chunk[i:i + formatted_chunk_size]
+                
                 remaining_bytes -= len(chunk)
 
     async def get_file_info(self, message_id: int) -> Dict[str, Any]:
