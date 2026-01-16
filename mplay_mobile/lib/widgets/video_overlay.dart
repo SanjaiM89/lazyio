@@ -19,31 +19,15 @@ class VideoOverlay extends StatelessWidget {
 
         // Dimensions for mini player
         final double miniHeight = 80;
-        final double miniWidth = size.width; // Docked at bottom, full width usually or small float
-        // Let's match the design of MiniPlayer (audio) roughly: floating bar or docked box
-        // But user asked for "Video to MiniPlayer", usually video miniplayers are floating boxes (PiP style)
-        // Let's go with a floating box at bottom right for true PiP feel, or a bottom bar.
-        // User said "scroll down ... go to mini player".
-        // Let's stick to a Docked Bottom Bar design similar to the Audio MiniPlayer for consistency initially,
-        // OR a classic YouTube PiP (bottom right).
-        // Given "Mini Player" usually implies the bottom bar in this app context, let's try a transform.
-        
-        // Actually, YouTube mobile minimizes to a bottom strip.
-        // Let's implement YouTube style: Full screen -> Bottom Strip.
+        // final double miniWidth = size.width; 
         
         final double height = isMinimized ? miniHeight : size.height;
-        final double width = isMinimized ? size.width : size.width;
-        final double top = isMinimized ? size.height - miniHeight - kBottomNavigationBarHeight - 20 : 0; 
-        // Note: kBottomNavigationBarHeight + some padding if needed. 
-        // If we are above the bottom nav, we need to know its height. 
-        // Assuming standard scaffold with bottom nav.
-        
-        // We'll place it in a Stack in main.dart, so 'top' controls position.
+        // final double width = size.width;
         
         return AnimatedPositioned(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
-          top: isMinimized ? size.height - 140 : 0, // Approx height of bottom nav + buffer
+          top: isMinimized ? size.height - 140 : 0, 
           left: 0,
           right: 0,
           height: height,
@@ -60,41 +44,158 @@ class VideoOverlay extends StatelessWidget {
   }
 
   Widget _buildFullScreenPlayer(BuildContext context, VideoProvider provider) {
-    return Stack(
-      children: [
-        if (provider.chewieController != null && provider.videoPlayerController!.value.isInitialized)
-          Chewie(controller: provider.chewieController!)
-        else
-          const Center(child: CircularProgressIndicator()),
-          
-        // Drag to minimize gesture
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 100,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragEnd: (details) {
-              if (details.primaryVelocity! > 300) {
+    // Mimic the old VideoPlayerScreen layout
+    final song = provider.currentVideo!;
+    
+    return SafeArea(
+      child: Column(
+        children: [
+          // Drag handle to minimize (optional, but good UX)
+          GestureDetector(
+             onVerticalDragEnd: (details) {
+               if (details.primaryVelocity! > 300) {
                  provider.minimize();
-              }
-            },
-            child: Container(color: Colors.transparent),
+               }
+             },
+             child: Container(
+               height: 24,
+               width: double.infinity,
+               color: Colors.black,
+               child: Center(
+                 child: Container(
+                   width: 40, 
+                   height: 4, 
+                   decoration: BoxDecoration(
+                     color: Colors.white24,
+                     borderRadius: BorderRadius.circular(2),
+                   ),
+                 ),
+               ),
+             ),
           ),
-        ),
-        
-        // Back Button to Minimize
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: IconButton(
-              icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
-              onPressed: () => provider.minimize(),
+          
+          // Video Player Area
+          AspectRatio(
+             aspectRatio: 16 / 9,
+             child: Stack(
+               children: [
+                 if (provider.chewieController != null && provider.videoPlayerController!.value.isInitialized)
+                   Chewie(controller: provider.chewieController!)
+                 else
+                   const Center(child: CircularProgressIndicator()),
+                   
+                   // Back Button Overlay (to minimize)
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: CircleAvatar(
+                      backgroundColor: Colors.black45,
+                      child: IconButton(
+                        icon: const Icon(Icons.keyboard_arrow_down, color: Colors.white),
+                        onPressed: () => provider.minimize(),
+                      ),
+                    ),
+                  ),
+               ],
+             ),
+          ),
+          
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                   const SizedBox(height: 16),
+                   // Title & Info
+                   Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          song.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          song.artist,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  
+                  // Recommendations
+                  if (provider.recommendations.isNotEmpty) ...[
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        "Up Next",
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    ListView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: provider.recommendations.length,
+                      itemBuilder: (context, index) {
+                        final rec = provider.recommendations[index];
+                        final thumbUrl = rec.thumbnail ?? rec.coverArt;
+                        
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          leading: Container(
+                            width: 80,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              color: Colors.white12,
+                              borderRadius: BorderRadius.circular(4),
+                              image: thumbUrl != null ? DecorationImage(
+                                image: NetworkImage(thumbUrl),
+                                fit: BoxFit.cover,
+                              ) : null,
+                            ),
+                            child: thumbUrl == null 
+                              ? const Icon(Icons.play_arrow, color: Colors.white54)
+                              : null,
+                          ),
+                          title: Text(
+                            rec.title,
+                            style: const TextStyle(color: Colors.white, fontSize: 14),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text(
+                            rec.artist,
+                            style: const TextStyle(color: Colors.white54, fontSize: 12),
+                          ),
+                          trailing: rec.isVideo 
+                            ? const Icon(Icons.videocam, color: Colors.white54, size: 16)
+                            : const Icon(Icons.music_note, color: Colors.white54, size: 16),
+                          onTap: () => provider.playVideo(rec),
+                        );
+                      },
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

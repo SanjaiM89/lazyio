@@ -159,4 +159,10 @@ class MusicProvider with ChangeNotifier {
       await _audioPlayer.seek(Duration.zero, index: _playlist.length - 1);
     }
   }
+  Future<void> stop() async {
+    await _audioPlayer.stop();
+    _isPlaying = false;
+    _currentSong = null;
+    notifyListeners();
+  }
 }

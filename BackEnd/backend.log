@@ -1,40 +1,9 @@
-TgCrypto is missing! Pyrogram will work the same, but at a much slower speed. More info: https://docs.pyrogram.org/topics/speedups
-INFO:     Started server process [181120]
+INFO:     Started server process [189092]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
-INFO:     10.218.87.86:37030 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     10.218.87.86:37040 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     connection closed
-INFO:     connection closed
-INFO:     10.218.87.86:54690 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     10.218.87.86:54718 - "WebSocket /ws" [accepted]
-INFO:     connection open
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8080): address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
 DEBUG: API_ID=33688695 BIN_CHANNEL=-1003261092648
-Telegram Client Started (Session Mode: Disk)
-[PeerCache] Loaded cached access_hash for channel 3261092648
-Resolved BIN_CHANNEL from cache: dump
+Failed to start Telegram Client: database is locked
 [AI] Starting hourly recommendations refresh...
-[AI] Using 5 liked songs for personalization
-[AI] Cached: 5 recs, playlist 'Diverse Drift'
-INFO:     10.218.87.86:54724 - "GET /api/songs HTTP/1.1" 200 OK
-INFO:     10.218.87.86:54706 - "GET /api/app-playlists HTTP/1.1" 200 OK
-INFO:     10.218.87.86:54708 - "GET /api/youtube/tasks?page=1&limit=50 HTTP/1.1" 200 OK
-INFO:     10.218.87.86:54730 - "GET /api/playlists HTTP/1.1" 200 OK
-INFO:     10.218.87.86:54702 - "GET /api/home HTTP/1.1" 200 OK
-INFO:     connection closed
-INFO:     connection closed
-INFO:     10.218.87.86:53410 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     10.218.87.86:53452 - "WebSocket /ws" [accepted]
-INFO:     connection open
-INFO:     10.218.87.86:53420 - "GET /api/app-playlists HTTP/1.1" 200 OK
-INFO:     10.218.87.86:53106 - "GET /api/songs HTTP/1.1" 200 OK
-INFO:     10.218.87.86:53436 - "GET /api/youtube/tasks?page=1&limit=50 HTTP/1.1" 200 OK
-INFO:     10.218.87.86:53108 - "GET /api/playlists HTTP/1.1" 200 OK
-INFO:     10.218.87.86:53412 - "GET /api/home HTTP/1.1" 200 OK
-INFO:     10.218.87.86:48496 - "GET /api/stream/696a1eaf82c44da84cdca137 HTTP/1.1" 206 Partial Content
-INFO:     10.218.87.86:35216 - "GET /api/stream/696a1eaf82c44da84cdca137 HTTP/1.1" 206 Partial Content

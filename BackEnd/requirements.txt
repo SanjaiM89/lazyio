@@ -4,7 +4,7 @@ python-multipart
 python-dotenv
 aiohttp
 pyrogram
-pyaes
+tgcrypto
 mutagen
 shazamio
 httpx

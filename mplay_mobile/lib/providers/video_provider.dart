@@ -18,6 +18,9 @@ class VideoProvider with ChangeNotifier {
   Song? get currentVideo => _currentVideo;
   bool get isMinimized => _isMinimized;
   bool get isLoading => _isLoading;
+  List<Song> get recommendations => _recommendations;
+
+  List<Song> _recommendations = [];
 
   Future<void> playVideo(Song video) async {
     // If same video, just maximize and play
@@ -49,6 +52,7 @@ class VideoProvider with ChangeNotifier {
         aspectRatio: _videoPlayerController!.value.aspectRatio,
         allowFullScreen: false, // We handle full screen manually via maximizing
         allowMuting: true,
+        allowPlaybackSpeedChanging: true,
         showControls: true,
         errorBuilder: (context, errorMessage) {
           return Center(
@@ -62,6 +66,12 @@ class VideoProvider with ChangeNotifier {
 
       _isLoading = false;
       notifyListeners();
+      
+      // Fetch recommendations
+      _recommendations = await ApiService.getRecommendations(limit: 5);
+      _recommendations.removeWhere((s) => s.id == video.id);
+      notifyListeners();
+
     } catch (e) {
       print("Error initializing video: $e");
       _isLoading = false;
