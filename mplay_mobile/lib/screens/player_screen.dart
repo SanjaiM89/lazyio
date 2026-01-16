@@ -6,8 +6,79 @@ import '../constants.dart';
 import '../api_service.dart';
 import '../models.dart';
 
-class PlayerScreen extends StatelessWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
+
+  @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen> {
+  bool? _likeStatus;
+  String? _currentSongId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Delay to ensure context is available
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadLikeStatus();
+    });
+  }
+
+  void _loadLikeStatus() {
+    final music = Provider.of<MusicProvider>(context, listen: false);
+    final song = music.currentSong;
+    if (song != null && song.id != _currentSongId) {
+      _currentSongId = song.id;
+      _fetchLikeStatus(song.id);
+    }
+  }
+
+  Future<void> _fetchLikeStatus(String songId) async {
+    try {
+      print("Fetching like status for: $songId");
+      final status = await ApiService.getLikeStatus(songId);
+      print("Like status result: $status");
+      if (mounted) setState(() => _likeStatus = status);
+    } catch (e) {
+      print("Error fetching like status: $e");
+    }
+  }
+
+  Future<void> _toggleLike() async {
+    if (_currentSongId == null) return;
+    try {
+      print("Toggle like for: $_currentSongId, current status: $_likeStatus");
+      if (_likeStatus == true) {
+        await ApiService.dislikeSong(_currentSongId!);
+        setState(() => _likeStatus = false);
+      } else {
+        await ApiService.likeSong(_currentSongId!);
+        setState(() => _likeStatus = true);
+      }
+      print("Like toggled, new status: $_likeStatus");
+    } catch (e) {
+      print("Error toggling like: $e");
+    }
+  }
+
+  Future<void> _toggleDislike() async {
+    if (_currentSongId == null) return;
+    try {
+      print("Toggle dislike for: $_currentSongId");
+      if (_likeStatus == false) {
+        await ApiService.likeSong(_currentSongId!);
+        setState(() => _likeStatus = true);
+      } else {
+        await ApiService.dislikeSong(_currentSongId!);
+        setState(() => _likeStatus = false);
+      }
+    } catch (e) {
+      print("Error toggling dislike: $e");
+    }
+  }
+
 
   void _showSongOptionsMenu(BuildContext context, Song song) {
     showModalBottomSheet(
@@ -209,6 +280,14 @@ class PlayerScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final music = Provider.of<MusicProvider>(context);
     final song = music.currentSong;
+
+    // Check if song changed
+    if (song != null && song.id != _currentSongId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _currentSongId = song.id;
+        _fetchLikeStatus(song.id);
+      });
+    }
 
     if (song == null) return const Scaffold(body: Center(child: Text("No song selected")));
 
@@ -440,12 +519,19 @@ class PlayerScreen extends StatelessWidget {
                     ),
                   ),
                   
-                  // Bottom actions
+                  // Bottom actions - Like/Dislike buttons
                   Expanded(
                     flex: 1,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
+                        IconButton(
+                          icon: Icon(
+                            _likeStatus == false ? Icons.thumb_down : Icons.thumb_down_outlined,
+                            color: _likeStatus == false ? Colors.red : Colors.white54,
+                          ),
+                          onPressed: _toggleDislike,
+                        ),
                         IconButton(
                           icon: const Icon(Icons.speaker_rounded),
                           onPressed: () {},
@@ -455,6 +541,13 @@ class PlayerScreen extends StatelessWidget {
                           icon: const Icon(Icons.playlist_play_rounded),
                           onPressed: () {},
                           color: Colors.white54,
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            _likeStatus == true ? Icons.thumb_up : Icons.thumb_up_outlined,
+                            color: _likeStatus == true ? kPrimaryColor : Colors.white54,
+                          ),
+                          onPressed: _toggleLike,
                         ),
                       ],
                     ),
@@ -474,3 +567,4 @@ class PlayerScreen extends StatelessWidget {
     return '${min}:${sec.toString().padLeft(2, '0')}';
   }
 }
+

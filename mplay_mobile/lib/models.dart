@@ -5,7 +5,9 @@ class Song {
   final String album;
   final double duration;
   final String? coverArt;
+  final String? thumbnail;
   final String fileName;
+  final String? mediaType; // 'audio' or 'video'
 
   Song({
     required this.id,
@@ -14,8 +16,15 @@ class Song {
     required this.album,
     required this.duration,
     this.coverArt,
+    this.thumbnail,
     required this.fileName,
+    this.mediaType,
   });
+
+  bool get isVideo => mediaType == 'video' || 
+    fileName.toLowerCase().endsWith('.mp4') ||
+    fileName.toLowerCase().endsWith('.mkv') ||
+    fileName.toLowerCase().endsWith('.webm');
 
   factory Song.fromJson(Map<String, dynamic> json) {
     return Song(
@@ -25,10 +34,13 @@ class Song {
       album: json['album'] ?? '',
       duration: (json['duration'] ?? 0).toDouble(),
       coverArt: json['cover_art'],
+      thumbnail: json['thumbnail'],
       fileName: json['file_name'] ?? '',
+      mediaType: json['media_type'],
     );
   }
 }
+
 
 class YouTubeTask {
   final String taskId;

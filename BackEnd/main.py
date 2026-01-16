@@ -14,7 +14,8 @@ from database import (
     create_playlist, get_playlists, get_playlist_by_id,
     add_song_to_playlist, remove_song_from_playlist, delete_playlist,
     record_play, get_recently_played,
-    get_ai_cache, update_ai_cache
+    get_ai_cache, update_ai_cache,
+    like_song, dislike_song, get_like_status, get_liked_songs, get_recommendations
 )
 from telegram_client import tg_client, FileNotFound
 from metadata import extract_metadata
@@ -270,6 +271,47 @@ async def recommend(current_song_id: str, history_ids: list[str]):
     }
 
 
+# ==================== Like/Dislike API ====================
+
+@app.post("/api/songs/{song_id}/like")
+async def api_like_song(song_id: str):
+    """Like a song"""
+    song = await get_song_by_id(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    await like_song(song_id)
+    return {"status": "liked", "song_id": song_id}
+
+
+@app.post("/api/songs/{song_id}/dislike")
+async def api_dislike_song(song_id: str):
+    """Dislike a song"""
+    song = await get_song_by_id(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
+    await dislike_song(song_id)
+    return {"status": "disliked", "song_id": song_id}
+
+
+@app.get("/api/songs/{song_id}/like-status")
+async def api_get_like_status(song_id: str):
+    """Get like status for a song. Returns {liked: true/false/null}"""
+    status = await get_like_status(song_id)
+    return status
+
+
+@app.get("/api/recommendations")
+async def api_get_recommendations(limit: int = 10):
+    """Get personalized recommendations based on likes/dislikes"""
+    recs = await get_recommendations(limit)
+    return {"recommendations": recs}
+
+
+@app.get("/api/liked-songs")
+async def api_get_liked_songs():
+    """Get all liked songs"""
+    songs = await get_liked_songs()
+    return {"songs": songs}
 # ==================== YouTube Audio Download API ====================
 from pydantic import BaseModel
 from youtube_downloader import youtube_downloader, get_task, DownloadStatus
@@ -432,7 +474,8 @@ async def process_youtube_download(task_id: str, url: str, quality: str):
             duration=task.duration,
             cover_art=task.thumbnail,
             file_name=file_name,
-            file_size=file_size
+            file_size=file_size,
+            thumbnail=task.thumbnail
         )
         
         # Mark complete and sync to DB

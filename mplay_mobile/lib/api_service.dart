@@ -129,4 +129,32 @@ class ApiService {
   static String getStreamUrl(String songId) {
     return '$baseUrl/api/stream/$songId';
   }
+
+  // Like/Dislike
+  static Future<void> likeSong(String songId) async {
+    await http.post(Uri.parse('$baseUrl/api/songs/$songId/like'));
+  }
+
+  static Future<void> dislikeSong(String songId) async {
+    await http.post(Uri.parse('$baseUrl/api/songs/$songId/dislike'));
+  }
+
+  static Future<bool?> getLikeStatus(String songId) async {
+    final response = await http.get(Uri.parse('$baseUrl/api/songs/$songId/like-status'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      return data['liked']; // true, false, or null
+    }
+    return null;
+  }
+
+  static Future<List<Song>> getRecommendations({int limit = 10}) async {
+    final response = await http.get(Uri.parse('$baseUrl/api/recommendations?limit=$limit'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> recs = data['recommendations'] ?? [];
+      return recs.map((j) => Song.fromJson(j)).toList();
+    }
+    return [];
+  }
 }

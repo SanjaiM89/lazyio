@@ -16,6 +16,11 @@ db = client.get_database("music_app")
 songs_collection = db.get_collection("songs")
 
 def song_helper(song) -> dict:
+    file_name = song.get("file_name", "")
+    # Determine media_type from file extension
+    video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
+    media_type = 'video' if any(file_name.lower().endswith(ext) for ext in video_exts) else 'audio'
+    
     return {
         "id": str(song["_id"]),
         "telegram_file_id": song.get("telegram_file_id"),
@@ -24,15 +29,17 @@ def song_helper(song) -> dict:
         "album": song.get("album"),
         "duration": song.get("duration"),
         "cover_art": song.get("cover_art"),
-        "file_name": song.get("file_name"),
+        "thumbnail": song.get("thumbnail"),  # YouTube thumbnail
+        "file_name": file_name,
         "file_size": song.get("file_size"),
+        "media_type": media_type,
     }
 
 async def init_db():
     # Motor handles connection pooling automatically
     pass
 
-async def add_song(telegram_file_id: str, title: str, artist: str, album: str, duration: int, cover_art: str, file_name: str, file_size: int):
+async def add_song(telegram_file_id: str, title: str, artist: str, album: str, duration: int, cover_art: str, file_name: str, file_size: int, thumbnail: str = None):
     # Check for duplicates by file_name or title+artist combo
     existing = await songs_collection.find_one({
         "$or": [
@@ -50,6 +57,7 @@ async def add_song(telegram_file_id: str, title: str, artist: str, album: str, d
         "album": album,
         "duration": duration,
         "cover_art": cover_art,
+        "thumbnail": thumbnail or cover_art,  # Use thumbnail or fall back to cover_art
         "file_name": file_name,
         "file_size": file_size
     }
@@ -364,3 +372,93 @@ async def clear_all_youtube_tasks():
     result = await youtube_tasks_collection.delete_many({})
     return result.deleted_count
 
+
+# ==================== Likes Collection ====================
+likes_collection = db.get_collection("likes")
+
+
+async def like_song(song_id: str) -> bool:
+    """Like a song (upsert)"""
+    from datetime import datetime
+    result = await likes_collection.update_one(
+        {"song_id": song_id},
+        {"$set": {"song_id": song_id, "liked": True, "updated_at": datetime.utcnow()}},
+        upsert=True
+    )
+    return True
+
+
+async def dislike_song(song_id: str) -> bool:
+    """Dislike a song (upsert)"""
+    from datetime import datetime
+    result = await likes_collection.update_one(
+        {"song_id": song_id},
+        {"$set": {"song_id": song_id, "liked": False, "updated_at": datetime.utcnow()}},
+        upsert=True
+    )
+    return True
+
+
+async def remove_like(song_id: str) -> bool:
+    """Remove like/dislike entry (neutral)"""
+    result = await likes_collection.delete_one({"song_id": song_id})
+    return result.deleted_count > 0
+
+
+async def get_like_status(song_id: str) -> dict:
+    """Get like status for a song. Returns {"liked": True/False/None}"""
+    doc = await likes_collection.find_one({"song_id": song_id})
+    if doc:
+        return {"liked": doc.get("liked")}
+    return {"liked": None}  # No preference
+
+
+async def get_liked_songs() -> list:
+    """Get all liked songs"""
+    song_ids = []
+    async for doc in likes_collection.find({"liked": True}):
+        song_ids.append(doc["song_id"])
+    
+    # Fetch song details
+    songs = []
+    for sid in song_ids:
+        song = await get_song_by_id(sid)
+        if song:
+            songs.append(song)
+    return songs
+
+
+async def get_disliked_song_ids() -> list:
+    """Get IDs of disliked songs"""
+    ids = []
+    async for doc in likes_collection.find({"liked": False}):
+        ids.append(doc["song_id"])
+    return ids
+
+
+async def get_recommendations(limit: int = 10) -> list:
+    """Get song recommendations based on likes/dislikes.
+    Prioritizes: liked songs first, then songs not disliked, excludes disliked.
+    """
+    disliked_ids = await get_disliked_song_ids()
+    liked_songs = await get_liked_songs()
+    
+    # Get all songs excluding disliked
+    all_songs = await get_all_songs()
+    
+    # Filter out disliked songs
+    filtered = [s for s in all_songs if s["id"] not in disliked_ids]
+    
+    # Build recommendation list: liked first, then others shuffled
+    import random
+    liked_ids = {s["id"] for s in liked_songs}
+    others = [s for s in filtered if s["id"] not in liked_ids]
+    random.shuffle(others)
+    
+    # Combine: liked songs + random others (up to limit)
+    recommendations = liked_songs[:limit]
+    remaining = limit - len(recommendations)
+    if remaining > 0:
+        recommendations.extend(others[:remaining])
+    
+    return recommendations[:limit]
