@@ -16,6 +16,10 @@ import re
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "temp_uploads", "youtube")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+# Cookies file for YouTube authentication (bypass bot detection)
+# Export from browser using extension like "Get cookies.txt LOCALLY"
+COOKIES_FILE = os.path.join(os.path.dirname(__file__), "cookies.txt")
+
 
 class DownloadStatus(Enum):
     PENDING = "pending"
@@ -105,6 +109,8 @@ class YouTubeDownloader:
     
     def __init__(self):
         self._cancelled_tasks: set = set()
+        # Limit concurrent downloads to 3 to avoid YouTube rate limits/bot detection
+        self.semaphore = asyncio.Semaphore(3)
     
     @classmethod
     def is_youtube_url(cls, url: str) -> bool:
@@ -174,6 +180,10 @@ class YouTubeDownloader:
             "no_warnings": True,
             "extract_flat": False,
         }
+        
+        # Add cookies if file exists
+        if os.path.exists(COOKIES_FILE):
+            opts["cookiefile"] = COOKIES_FILE
         
         def _extract():
             with YoutubeDL(opts) as ydl:
@@ -336,7 +346,29 @@ class YouTubeDownloader:
                     "-metadata", f"title={task.title}",
                     "-metadata", f"artist={task.artist}",
                 ],
+                # Anti-bot detection options (WZML-X style)
+                "extractor_retries": 5,
+                "retries": 10,
+                "fragment_retries": 10,
+                "retry_sleep_functions": {
+                    "http": lambda n: 3,
+                    "fragment": lambda n: 3,
+                    "file_access": lambda n: 3,
+                    "extractor": lambda n: 3,
+                },
+                "sleep_interval": 2,
+                "max_sleep_interval": 10,
+                "sleep_interval_requests": 1,
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
             }
+            
+            # Add cookies if file exists
+            if os.path.exists(COOKIES_FILE):
+                opts["cookiefile"] = COOKIES_FILE
+                print(f"[YT] Using cookies from {COOKIES_FILE}")
             
             # Download in thread pool
             def _download():
@@ -346,7 +378,9 @@ class YouTubeDownloader:
                 print(f"[YT] Video Download complete for task {task_id}")
             
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, _download)
+            async with self.semaphore:
+                print(f"[YT] Acquired semaphore for task {task_id} (Video)")
+                await loop.run_in_executor(None, _download)
             
             # Find the output file
             print(f"[YT] Looking for video files in {DOWNLOAD_DIR} with prefix {task_id}")
@@ -453,7 +487,29 @@ class YouTubeDownloader:
                     "-metadata", f"title={task.title}",
                     "-metadata", f"artist={task.artist}",
                 ],
+                # Anti-bot detection options (WZML-X style)
+                "extractor_retries": 5,
+                "retries": 10,
+                "fragment_retries": 10,
+                "retry_sleep_functions": {
+                    "http": lambda n: 3,       # 3 seconds between HTTP retries
+                    "fragment": lambda n: 3,   # 3 seconds between fragment retries
+                    "file_access": lambda n: 3,
+                    "extractor": lambda n: 3,  # 3 seconds between extractor retries
+                },
+                "sleep_interval": 2,  # Base delay between requests
+                "max_sleep_interval": 10,
+                "sleep_interval_requests": 1,  # Delay between file requests
+                "http_headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept-Language": "en-US,en;q=0.9",
+                },
             }
+            
+            # Add cookies if file exists
+            if os.path.exists(COOKIES_FILE):
+                opts["cookiefile"] = COOKIES_FILE
+                print(f"[YT] Using cookies from {COOKIES_FILE}")
             
             # Download in thread pool
             def _download():
@@ -463,7 +519,9 @@ class YouTubeDownloader:
                 print(f"[YT] Download complete for task {task_id}")
             
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, _download)
+            async with self.semaphore:
+                print(f"[YT] Acquired semaphore for task {task_id} (Audio)")
+                await loop.run_in_executor(None, _download)
             print(f"[YT] Executor finished for task {task_id}")
             
             # Find the output file - check for any file with task_id prefix
