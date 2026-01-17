@@ -21,9 +21,15 @@ def song_helper(song) -> dict:
     video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
     media_type = 'video' if any(file_name.lower().endswith(ext) for ext in video_exts) else 'audio'
     
+    # Support new dual-ID schema
+    has_video = song.get("has_video", song.get("video_telegram_id") is not None)
+    
     return {
         "id": str(song["_id"]),
-        "telegram_file_id": song.get("telegram_file_id"),
+        "telegram_file_id": song.get("telegram_file_id"),  # Legacy field
+        "audio_telegram_id": song.get("audio_telegram_id") or song.get("telegram_file_id"),  # New: audio stream ID
+        "video_telegram_id": song.get("video_telegram_id"),  # New: video stream ID
+        "has_video": has_video,
         "title": song.get("title"),
         "artist": song.get("artist"),
         "album": song.get("album"),
@@ -39,7 +45,21 @@ async def init_db():
     # Motor handles connection pooling automatically
     pass
 
-async def add_song(telegram_file_id: str, title: str, artist: str, album: str, duration: int, cover_art: str, file_name: str, file_size: int, thumbnail: str = None):
+async def add_song(
+    telegram_file_id: str = None, 
+    title: str = None, 
+    artist: str = None, 
+    album: str = None, 
+    duration: int = None, 
+    cover_art: str = None, 
+    file_name: str = None, 
+    file_size: int = None, 
+    thumbnail: str = None,
+    audio_telegram_id: str = None,
+    video_telegram_id: str = None,
+    has_video: bool = False
+):
+    """Add a song with optional dual audio/video IDs"""
     # Check for duplicates by file_name or title+artist combo
     existing = await songs_collection.find_one({
         "$or": [
@@ -48,16 +68,31 @@ async def add_song(telegram_file_id: str, title: str, artist: str, album: str, d
         ]
     })
     if existing:
-        return str(existing["_id"])  # Return existing song ID instead of creating duplicate
+        # Update existing song with new IDs if provided
+        updates = {}
+        if audio_telegram_id:
+            updates["audio_telegram_id"] = audio_telegram_id
+        if video_telegram_id:
+            updates["video_telegram_id"] = video_telegram_id
+            updates["has_video"] = True
+        if updates:
+            await songs_collection.update_one({"_id": existing["_id"]}, {"$set": updates})
+        return str(existing["_id"])  # Return existing song ID
+    
+    # Determine audio_telegram_id: use provided or legacy field
+    final_audio_id = audio_telegram_id or telegram_file_id
     
     song_data = {
-        "telegram_file_id": telegram_file_id,
+        "telegram_file_id": telegram_file_id,  # Legacy compatibility
+        "audio_telegram_id": final_audio_id,
+        "video_telegram_id": video_telegram_id,
+        "has_video": has_video or (video_telegram_id is not None),
         "title": title,
         "artist": artist,
         "album": album,
         "duration": duration,
         "cover_art": cover_art,
-        "thumbnail": thumbnail or cover_art,  # Use thumbnail or fall back to cover_art
+        "thumbnail": thumbnail or cover_art,
         "file_name": file_name,
         "file_size": file_size
     }

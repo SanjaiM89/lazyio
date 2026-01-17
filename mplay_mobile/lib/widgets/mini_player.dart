@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../music_provider.dart';
 import 'glass_container.dart';
 import '../screens/player_screen.dart';
+import '../screens/unified_player_screen.dart';
 import '../providers/video_provider.dart';
 import '../constants.dart';
 
@@ -24,22 +25,17 @@ class MiniPlayer extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        if (song.isVideo) {
-          // Play via VideoProvider (Overlay)
-          Provider.of<VideoProvider>(context, listen: false).playVideo(song);
-        } else {
-          // Audio Player - ensure video is closed if we are explicitly opening audio player?
-          // Actually, if we touch the miniplayer and it's audio, video shouldn't be playing anyway.
-          // But to be safe:
-          Provider.of<VideoProvider>(context, listen: false).close();
-          
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => const PlayerScreen(),
-              fullscreenDialog: true,
-            ),
-          );
-        }
+        // Close video overlay if open
+        Provider.of<VideoProvider>(context, listen: false).close();
+        
+        // Always use UnifiedPlayerScreen for YouTube Music-style experience
+        // The Song/Video toggle will only appear if song.hasVideo is true
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (context) => UnifiedPlayerScreen(song: song, startWithVideo: false),
+            fullscreenDialog: true,
+          ),
+        );
       },
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),

@@ -8,6 +8,9 @@ class Song {
   final String? thumbnail;
   final String fileName;
   final String? mediaType; // 'audio' or 'video'
+  final String? audioTelegramId;
+  final String? videoTelegramId;
+  final bool hasVideo;
 
   Song({
     required this.id,
@@ -19,6 +22,9 @@ class Song {
     this.thumbnail,
     required this.fileName,
     this.mediaType,
+    this.audioTelegramId,
+    this.videoTelegramId,
+    this.hasVideo = false,
   });
 
   bool get isVideo => mediaType == 'video' || 
@@ -37,6 +43,9 @@ class Song {
       thumbnail: json['thumbnail'],
       fileName: json['file_name'] ?? '',
       mediaType: json['media_type'],
+      audioTelegramId: json['audio_telegram_id'],
+      videoTelegramId: json['video_telegram_id'],
+      hasVideo: json['has_video'] ?? false,
     );
   }
 }

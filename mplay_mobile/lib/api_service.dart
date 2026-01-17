@@ -129,7 +129,10 @@ class ApiService {
     await http.delete(Uri.parse('$baseUrl/api/songs/$songId'));
   }
 
-  static String getStreamUrl(String songId) {
+  static String getStreamUrl(String songId, {String? type}) {
+    if (type != null) {
+      return '$baseUrl/api/stream/$songId?type=$type';
+    }
     return '$baseUrl/api/stream/$songId';
   }
 

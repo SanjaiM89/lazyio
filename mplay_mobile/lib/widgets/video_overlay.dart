@@ -101,10 +101,9 @@ class VideoOverlay extends StatelessWidget {
           ),
           
           Expanded(
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
                    const SizedBox(height: 16),
                    // Title & Info
                    Padding(
@@ -189,9 +188,10 @@ class VideoOverlay extends StatelessWidget {
                         );
                       },
                     ),
+                    // Add extra padding at bottom to ensure last item is visible above status bar/nav bar
+                    const SizedBox(height: 80),
                   ],
-                ],
-              ),
+              ],
             ),
           ),
         ],
@@ -261,7 +261,7 @@ class VideoOverlay extends StatelessWidget {
                   provider.videoPlayerController!.play();
                 }
                 // Force rebuild to update icon
-                provider.notifyListeners(); 
+                provider.refresh(); 
               },
             ),
             IconButton(

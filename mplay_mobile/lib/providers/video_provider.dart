@@ -42,7 +42,10 @@ class VideoProvider with ChangeNotifier {
     try {
       final streamUrl = ApiService.getStreamUrl(video.id);
       
-      _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
+      _videoPlayerController = VideoPlayerController.networkUrl(
+        Uri.parse(streamUrl),
+        videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+      );
       await _videoPlayerController!.initialize();
 
       _chewieController = ChewieController(
@@ -87,6 +90,11 @@ class VideoProvider with ChangeNotifier {
 
   void maximize() {
     _isMinimized = false;
+    notifyListeners();
+  }
+
+  /// Call this to force UI rebuild (e.g., after toggling play state externally)
+  void refresh() {
     notifyListeners();
   }
 

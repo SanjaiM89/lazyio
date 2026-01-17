@@ -141,7 +141,11 @@ async def upload_files(files: list[UploadFile] = File(...)):
     """
     Uploads files to server temp, extracts metadata, uploads to Telegram,
     saves to DB, then cleans up.
+    For video files: also extracts audio and uploads as separate stream.
     """
+    from audio_extractor import extract_audio_from_video, cleanup_extracted_file
+    
+    VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
     uploaded_songs = []
     
     for file in files:
@@ -149,29 +153,50 @@ async def upload_files(files: list[UploadFile] = File(...)):
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
         
+        # Check if it's a video file
+        is_video = any(file.filename.lower().endswith(ext) for ext in VIDEO_EXTENSIONS)
+        
         # Extract Metadata
         meta = await extract_metadata(temp_path)
         
-        # Upload to Telegram
+        # Upload main file to Telegram (video or audio)
         tg_msg = await tg_client.upload_file(temp_path)
         if not tg_msg:
-            # Try to infer if it failed due to strict channel checks
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             continue
             
-        # Get Telegram File ID/Unique ID from message (we use message_id for streaming)
-        # We store the message_id as the reference
         telegram_ref = str(tg_msg.id)
         
-        # Save to DB
+        # For video files, also extract and upload audio
+        audio_telegram_id = None
+        video_telegram_id = None
+        
+        if is_video:
+            video_telegram_id = telegram_ref
+            
+            # Extract audio from video
+            audio_path = await extract_audio_from_video(temp_path)
+            if audio_path:
+                audio_msg = await tg_client.upload_file(audio_path)
+                if audio_msg:
+                    audio_telegram_id = str(audio_msg.id)
+                    print(f"[UPLOAD] Audio extracted and uploaded: {audio_telegram_id}")
+                cleanup_extracted_file(audio_path)
+        else:
+            audio_telegram_id = telegram_ref
+        
+        # Save to DB with both IDs
         song_id = await add_song(
-            telegram_file_id=telegram_ref,
+            telegram_file_id=audio_telegram_id or video_telegram_id,
+            audio_telegram_id=audio_telegram_id,
+            video_telegram_id=video_telegram_id,
+            has_video=is_video,
             title=meta.get("title"),
             artist=meta.get("artist"),
             album=meta.get("album"),
             duration=meta.get("duration"),
-            cover_art=meta.get("cover_art"), # TODO: Handle cover art upload/url
+            cover_art=meta.get("cover_art"),
             file_name=file.filename,
             file_size=os.path.getsize(temp_path)
         )
@@ -189,13 +214,31 @@ async def list_songs():
     return await get_all_songs()
 
 @app.get("/api/stream/{song_id}")
-async def stream_song(song_id: str, request: Request):
+async def stream_song(song_id: str, request: Request, type: str = None):
+    """
+    Stream a song by ID.
+    Optional query param:
+      - type=audio: Force audio stream (uses audio_telegram_id)
+      - type=video: Force video stream (uses video_telegram_id)
+      - Default: Uses legacy telegram_file_id (audio for audio files, video for video files)
+    """
     song = await get_song_by_id(song_id)
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
     
     try:
-        msg_id = int(song["telegram_file_id"])
+        # Determine which Telegram message ID to stream
+        if type == "audio":
+            msg_id_str = song.get("audio_telegram_id") or song.get("telegram_file_id")
+        elif type == "video":
+            msg_id_str = song.get("video_telegram_id")
+            if not msg_id_str:
+                raise HTTPException(status_code=404, detail="Video stream not available for this song")
+        else:
+            # Default: legacy behavior
+            msg_id_str = song.get("telegram_file_id")
+        
+        msg_id = int(msg_id_str)
         file_info = await tg_client.get_file_info(msg_id)
         file_size = file_info["file_size"]
         
@@ -594,67 +637,40 @@ async def sync_task_to_db(task_id: str):
 
 
 async def process_youtube_download(task_id: str, url: str, quality: str):
-    """Background task for downloading YouTube content and uploading to Telegram"""
+    """
+    Background task for downloading YouTube content and uploading to Telegram.
+    ALWAYS downloads AUDIO first (high priority), then VIDEO second.
+    This ensures background playback is always ready.
+    """
     print(f"[MAIN] Starting process_youtube_download for {task_id}")
-    try:
-        # Determine if it's audio or video based on quality string
-        # If quality is "Best Video" or ends with "p" (e.g. 1080p), it's video
-        is_video = quality == "best" or quality.endswith("p")
-        
-        # Create a sync callback for progress updates
-        def on_progress(task):
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(broadcast_task_update(task.task_id))
-            except RuntimeError:
-                pass
-        
-        if is_video:
-             task = await youtube_downloader.download_video(url, quality, task_id, broadcast_callback=on_progress)
-        else:
-             task = await youtube_downloader.download_audio(url, quality, task_id, broadcast_callback=on_progress)
-             
-        print(f"[MAIN] Download complete, status: {task.status}, file: {task.file_path}")
-        
-        # Sync to DB during download
-        await sync_task_to_db(task_id)
-        
-        if task.status == DownloadStatus.FAILED or task.status == DownloadStatus.CANCELLED:
-            print(f"[MAIN] Task failed/cancelled: {task.error}")
-            await sync_task_to_db(task_id)
-            return
-        
-        # Upload to Telegram with progress tracking
-        print(f"[MAIN] Uploading to Telegram: {task.file_path}")
-        
-        # Store upload progress info in task
+    
+    # Determine if user requested video specifically
+    user_wants_video = quality == "best" or quality.endswith("p")
+    
+    # Helper for progress callbacks
+    def on_progress(task):
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(broadcast_task_update(task.task_id))
+        except RuntimeError:
+            pass
+    
+    # Helper for upload progress
+    def create_upload_callback(task, base_progress, progress_range):
         import time
-        upload_start_time = time.time()
-        
-        # Use a closure with state
-        class UploadState:
-            def __init__(self):
-                self.last_time = time.time()
-                self.last_current = 0
-                self.start_time = time.time()
-
-        state = UploadState()
+        state = {"last_time": time.time(), "last_current": 0}
         
         def on_upload_progress(current, total, speed):
             now = time.time()
-            dt = now - state.last_time
+            dt = now - state["last_time"]
             
-            # Update stats every 0.5s to avoid spam
             if dt > 0.5 or current == total:
-                # Use speed provided by telegram_client (bytes/s)
                 if speed and speed > 0:
                     if speed > 1024 * 1024:
                         task.speed = f"{speed / (1024 * 1024):.2f} MiB/s"
                     else:
                         task.speed = f"{speed / 1024:.2f} KiB/s"
-                    
-                    # Calculate ETA using provided speed
                     remaining = total - current
                     eta_seconds = remaining / speed
                     m, s = divmod(int(eta_seconds), 60)
@@ -664,69 +680,119 @@ async def process_youtube_download(task_id: str, url: str, quality: str):
                     task.speed = "0 B/s"
                     task.eta = "--:--"
                 
-                # Update downloaded field to reflect uploaded bytes
                 task.downloaded_bytes = current
                 task.total_bytes = total
                 
-                # Update progress: 85-100% for upload phase
                 if total > 0:
-                    upload_pct = (current / total) * 15  # 15% of total for upload
-                    task.progress = 85 + upload_pct
+                    upload_pct = (current / total) * progress_range
+                    task.progress = base_progress + upload_pct
                 
-                # Sync state
-                state.last_time = now
-                state.last_current = current
+                state["last_time"] = now
+                state["last_current"] = current
                 
-                # Broadcast update via WebSocket (non-blocking)
                 import asyncio
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(broadcast_task_update(task_id))
+                    loop.create_task(broadcast_task_update(task.task_id))
                 except RuntimeError:
-                    pass  # No running loop, ignore
+                    pass
             
-            # Check for cancellation
             if task_id in youtube_downloader._cancelled_tasks:
-                print(f"[MAIN] Upload cancelled by user for {task_id}")
                 raise ValueError("Download cancelled by user")
         
-        tg_msg = await tg_client.upload_file(task.file_path, progress_callback=on_upload_progress)
-        if not tg_msg:
-            print(f"[MAIN] Telegram upload failed!")
-            youtube_downloader.mark_failed(task_id, "Failed to upload to Telegram")
+        return on_upload_progress
+    
+    try:
+        # ============ STEP 1: DOWNLOAD AUDIO FIRST (Priority) ============
+        print(f"[MAIN] Step 1: Downloading AUDIO for {task_id}")
+        audio_task = await youtube_downloader.download_audio(url, "320", task_id, broadcast_callback=on_progress)
+        
+        if audio_task.status == DownloadStatus.FAILED or audio_task.status == DownloadStatus.CANCELLED:
+            print(f"[MAIN] Audio download failed: {audio_task.error}")
             await sync_task_to_db(task_id)
             return
         
-        print(f"[MAIN] Upload success! Message ID: {tg_msg.id}")
-        telegram_ref = str(tg_msg.id)
+        # Upload audio to Telegram (progress 0-40%)
+        print(f"[MAIN] Uploading audio to Telegram: {audio_task.file_path}")
+        audio_msg = await tg_client.upload_file(audio_task.file_path, progress_callback=create_upload_callback(audio_task, 0, 40))
         
-        # Get file info for size
-        file_size = task.file_size
-        if os.path.exists(task.file_path):
-            file_size = os.path.getsize(task.file_path)
+        if not audio_msg:
+            youtube_downloader.mark_failed(task_id, "Failed to upload audio to Telegram")
+            await sync_task_to_db(task_id)
+            return
         
-        # Determine file extension from path
-        file_name = os.path.basename(task.file_path) if task.file_path else f"{task.title}.{'mp4' if is_video else 'mp3'}"
+        audio_telegram_id = str(audio_msg.id)
+        print(f"[MAIN] Audio uploaded! Telegram ID: {audio_telegram_id}")
         
-        # Save to songs database
+        # Get audio file info
+        audio_file_size = os.path.getsize(audio_task.file_path) if os.path.exists(audio_task.file_path) else audio_task.file_size
+        audio_file_name = os.path.basename(audio_task.file_path) if audio_task.file_path else f"{audio_task.title}.mp3"
+        
+        # Save audio to database first (user can start using it immediately)
         song_id = await add_song(
-            telegram_file_id=telegram_ref,
-            title=task.title,
-            artist=task.artist,
+            telegram_file_id=audio_telegram_id,  # Legacy compatibility
+            audio_telegram_id=audio_telegram_id,
+            title=audio_task.title,
+            artist=audio_task.artist,
             album="YouTube",
-            duration=task.duration,
-            cover_art=task.thumbnail,
-            file_name=file_name,
-            file_size=file_size,
-            thumbnail=task.thumbnail
+            duration=audio_task.duration,
+            cover_art=audio_task.thumbnail,
+            file_name=audio_file_name,
+            file_size=audio_file_size,
+            thumbnail=audio_task.thumbnail,
+            has_video=False  # Will update after video download
         )
         
-        # Mark complete and sync to DB
-        youtube_downloader.mark_completed(task_id, song_id, tg_msg.id)
+        # Mark audio complete, notify clients
+        youtube_downloader.mark_completed(task_id, song_id, audio_msg.id)
         await sync_task_to_db(task_id)
-        
-        # Notify clients
         await notify_update("library_updated")
+        
+        # Cleanup audio temp file
+        if audio_task.file_path and os.path.exists(audio_task.file_path):
+            try:
+                os.remove(audio_task.file_path)
+            except:
+                pass
+        
+        # ============ STEP 2: DOWNLOAD VIDEO (Background) ============
+        print(f"[MAIN] Step 2: Downloading VIDEO for {task_id}")
+        video_task_id = f"{task_id}_video"
+        
+        try:
+            # Use best quality or user-requested quality
+            video_quality = quality if user_wants_video else "best"
+            video_task = await youtube_downloader.download_video(url, video_quality, video_task_id, broadcast_callback=None)
+            
+            if video_task.status == DownloadStatus.FAILED or video_task.status == DownloadStatus.CANCELLED:
+                print(f"[MAIN] Video download failed (non-critical): {video_task.error}")
+                # Video failure is non-critical, audio is already saved
+            else:
+                # Upload video to Telegram
+                print(f"[MAIN] Uploading video to Telegram: {video_task.file_path}")
+                video_msg = await tg_client.upload_file(video_task.file_path)
+                
+                if video_msg:
+                    video_telegram_id = str(video_msg.id)
+                    print(f"[MAIN] Video uploaded! Telegram ID: {video_telegram_id}")
+                    
+                    # Update song with video ID
+                    await add_song(
+                        title=audio_task.title,
+                        artist=audio_task.artist,
+                        video_telegram_id=video_telegram_id,
+                        has_video=True
+                    )
+                    
+                    await notify_update("library_updated")
+                else:
+                    print(f"[MAIN] Video upload failed (non-critical)")
+                    
+        except Exception as ve:
+            print(f"[MAIN] Video processing error (non-critical): {ve}")
+        finally:
+            # Cleanup video temp file
+            youtube_downloader.cleanup_task(video_task_id)
         
     except Exception as e:
         import traceback
@@ -734,7 +800,6 @@ async def process_youtube_download(task_id: str, url: str, quality: str):
         youtube_downloader.mark_failed(task_id, str(e))
         await sync_task_to_db(task_id)
     finally:
-        # Cleanup temp files
         youtube_downloader.cleanup_task(task_id)
 
 
