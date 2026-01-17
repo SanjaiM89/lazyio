@@ -36,7 +36,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      String streamUrl = "$baseUrl/api/stream/${widget.song.id}";
+      String streamUrl = "${AppConfig.baseUrl}/api/stream/${widget.song.id}";
       _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
       
       await _videoPlayerController.initialize();

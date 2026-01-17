@@ -145,8 +145,15 @@ class TelegramClientWrapper:
     async def stop(self):
         try:
             if self.app.is_connected:
+                print("Stopping Telegram Client...")
                 await self.app.stop()
                 print("Telegram Client Stopped")
+        except RuntimeError as e:
+            # Ignore "attached to a different loop" error during reload
+            if "attached to a different loop" in str(e):
+                pass
+            else:
+                print(f"RuntimeError stopping client: {e}")
         except Exception as e:
             print(f"Error stopping Telegram Client: {e}")
             # If standard stop fails implies loop issue, force close session

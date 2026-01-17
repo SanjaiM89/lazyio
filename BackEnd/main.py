@@ -4,6 +4,12 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
+from dotenv import load_dotenv
+
+# Load config.env explicitly for standalone execution
+if os.path.exists("config.env"):
+    load_dotenv("config.env")
+
 import shutil
 import asyncio
 
@@ -134,6 +140,51 @@ async def broadcast_task_update(task_id: str):
     if task:
         await notify_update("task_update", task.to_dict())
 
+
+# ==================== Connection Info API ====================
+# Allows mobile app to fetch current server IP/Port from MongoDB
+
+@app.get("/api/connection-info")
+async def get_connection_info():
+    """
+    Get current server connection info (IP and Port) from MongoDB.
+    This is updated by vpn_manager.py when VPN connects.
+    """
+    try:
+        settings = db["settings"]
+        doc = settings.find_one({"_id": "connection_info"})
+        if doc:
+            return {
+                "ip": doc.get("ip"),
+                "port": doc.get("port"),
+                "updated_at": doc.get("updated_at"),
+                "domain": "lazyio.duckdns.org"  # DuckDNS domain
+            }
+        return {"ip": None, "port": None, "domain": "lazyio.duckdns.org"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+from pydantic import BaseModel as PortBaseModel
+
+class PortUpdateRequest(PortBaseModel):
+    port: str
+
+@app.post("/api/connection-info/port")
+async def update_port(request: PortUpdateRequest):
+    """
+    Manually update the port in MongoDB.
+    Useful if user needs to set it from mobile app.
+    """
+    try:
+        settings = db["settings"]
+        settings.update_one(
+            {"_id": "connection_info"},
+            {"$set": {"port": request.port}},
+            upsert=True
+        )
+        return {"success": True, "port": request.port}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/upload")
@@ -1120,7 +1171,15 @@ if __name__ == "__main__":
     import uvicorn
     import os
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Enable reload to pick up code changes AND config.env changes
+    uvicorn.run(
+        "main:app", 
+        host="0.0.0.0", 
+        port=port, 
+        reload=True,
+        reload_includes=["config.env", "*.env"],
+        timeout_graceful_shutdown=1
+    )
 
 
 

@@ -5,7 +5,7 @@ import 'constants.dart';
 
 class ApiService {
   static Future<List<Song>> getSongs() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/songs'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/songs'));
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
       return data
@@ -18,7 +18,7 @@ class ApiService {
   }
 
   static Future<Map<String, dynamic>> getHomepage() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/home'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/home'));
     if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
@@ -27,13 +27,13 @@ class ApiService {
   }
   
   static Future<void> recordPlay(String songId) async {
-    await http.post(Uri.parse('$baseUrl/api/songs/$songId/play'));
+    await http.post(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/play'));
   }
 
   // YouTube
   static Future<String> submitYoutubeUrl(String url, String quality) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/api/youtube'),
+      Uri.parse('${AppConfig.baseUrl}/api/youtube'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'url': url, 'quality': quality}),
     );
@@ -47,7 +47,7 @@ class ApiService {
 
   static Future<List<YouTubeTask>> getYoutubeTasks({int page = 1, int limit = 10}) async {
     final response = await http.get(
-      Uri.parse('$baseUrl/api/youtube/tasks?page=$page&limit=$limit'),
+      Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks?page=$page&limit=$limit'),
     );
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
@@ -59,19 +59,19 @@ class ApiService {
   }
 
   static Future<void> cancelYoutubeTask(String taskId) async {
-    await http.post(Uri.parse('$baseUrl/api/youtube/cancel/$taskId'));
+    await http.post(Uri.parse('${AppConfig.baseUrl}/api/youtube/cancel/$taskId'));
   }
   
   static Future<void> deleteYoutubeTask(String taskId) async {
-      await http.delete(Uri.parse('$baseUrl/api/youtube/tasks/$taskId'));
+      await http.delete(Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks/$taskId'));
   }
   
   static Future<void> clearAllYoutubeTasks() async {
-    await http.delete(Uri.parse('$baseUrl/api/youtube/tasks'));
+    await http.delete(Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks'));
   }
   
   static Future<void> uploadFiles(List<String> filePaths) async {
-    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl/api/upload'));
+    final request = http.MultipartRequest('POST', Uri.parse('${AppConfig.baseUrl}/api/upload'));
     for (String path in filePaths) {
       request.files.add(await http.MultipartFile.fromPath('files', path));
     }
@@ -83,7 +83,7 @@ class ApiService {
 
   // Playlists
   static Future<List<dynamic>> getPlaylists() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/playlists'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/playlists'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return data['playlists'] ?? [];
@@ -93,7 +93,7 @@ class ApiService {
   
   static Future<String> createPlaylist(String name) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/api/playlists'),
+      Uri.parse('${AppConfig.baseUrl}/api/playlists'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'name': name, 'songs': []}),
     );
@@ -106,12 +106,12 @@ class ApiService {
   
   static Future<void> addSongToPlaylist(String playlistId, String songId) async {
     await http.post(
-      Uri.parse('$baseUrl/api/playlists/$playlistId/songs?song_id=$songId'),
+      Uri.parse('${AppConfig.baseUrl}/api/playlists/$playlistId/songs?song_id=$songId'),
     );
   }
   
   static Future<void> deletePlaylist(String playlistId) async {
-    await http.delete(Uri.parse('$baseUrl/api/playlists/$playlistId'));
+    await http.delete(Uri.parse('${AppConfig.baseUrl}/api/playlists/$playlistId'));
   }
   
   static Future<void> updateSong(String songId, {String? title, String? artist}) async {
@@ -119,34 +119,34 @@ class ApiService {
     if (title != null) body['title'] = title;
     if (artist != null) body['artist'] = artist;
     await http.patch(
-      Uri.parse('$baseUrl/api/songs/$songId'),
+      Uri.parse('${AppConfig.baseUrl}/api/songs/$songId'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode(body),
     );
   }
   
   static Future<void> deleteSong(String songId) async {
-    await http.delete(Uri.parse('$baseUrl/api/songs/$songId'));
+    await http.delete(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId'));
   }
 
   static String getStreamUrl(String songId, {String? type}) {
     if (type != null) {
-      return '$baseUrl/api/stream/$songId?type=$type';
+      return '${AppConfig.baseUrl}/api/stream/$songId?type=$type';
     }
-    return '$baseUrl/api/stream/$songId';
+    return '${AppConfig.baseUrl}/api/stream/$songId';
   }
 
   // Like/Dislike
   static Future<void> likeSong(String songId) async {
-    await http.post(Uri.parse('$baseUrl/api/songs/$songId/like'));
+    await http.post(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/like'));
   }
 
   static Future<void> dislikeSong(String songId) async {
-    await http.post(Uri.parse('$baseUrl/api/songs/$songId/dislike'));
+    await http.post(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/dislike'));
   }
 
   static Future<bool?> getLikeStatus(String songId) async {
-    final response = await http.get(Uri.parse('$baseUrl/api/songs/$songId/like-status'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/like-status'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       return data['liked']; // true, false, or null
@@ -155,7 +155,7 @@ class ApiService {
   }
 
   static Future<List<Song>> getRecommendations({int limit = 10}) async {
-    final response = await http.get(Uri.parse('$baseUrl/api/recommendations?limit=$limit'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/recommendations?limit=$limit'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final List<dynamic> recs = data['recommendations'] ?? [];
@@ -166,7 +166,7 @@ class ApiService {
 
   /// Get LLM-generated upcoming queue based on current song
   static Future<Map<String, dynamic>> getUpcomingQueue(String songId) async {
-    final response = await http.get(Uri.parse('$baseUrl/api/upcoming-queue/$songId'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/upcoming-queue/$songId'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final List<dynamic> queue = data['queue'] ?? [];
@@ -185,7 +185,7 @@ class ApiService {
 
   /// Get persistent AI queue from MongoDB
   static Future<List<Song>> getAIQueue() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/ai-queue'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/ai-queue'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final List<dynamic> songs = data['songs'] ?? [];
@@ -196,7 +196,7 @@ class ApiService {
 
   /// Refresh AI queue using LLM and save to MongoDB
   static Future<List<Song>> refreshAIQueue() async {
-    final response = await http.post(Uri.parse('$baseUrl/api/ai-queue/refresh'));
+    final response = await http.post(Uri.parse('${AppConfig.baseUrl}/api/ai-queue/refresh'));
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
       final List<dynamic> songs = data['songs'] ?? [];
@@ -207,13 +207,13 @@ class ApiService {
 
   /// Mark song as played (removes from queue)
   static Future<void> markSongPlayed(String songId) async {
-    await http.post(Uri.parse('$baseUrl/api/ai-queue/mark-played/$songId'));
+    await http.post(Uri.parse('${AppConfig.baseUrl}/api/ai-queue/mark-played/$songId'));
   }
 
   /// Send behavior signal (listen, skip, like, dislike)
   static Future<void> sendSignal(String songId, String signalType, {int durationSeconds = 0}) async {
     await http.post(
-      Uri.parse('$baseUrl/api/ai-queue/signal/$songId'),
+      Uri.parse('${AppConfig.baseUrl}/api/ai-queue/signal/$songId'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({
         'signal_type': signalType,
@@ -226,7 +226,7 @@ class ApiService {
 
   /// Get all app playlists
   static Future<List<Playlist>> getAppPlaylists() async {
-    final response = await http.get(Uri.parse('$baseUrl/api/app-playlists'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/app-playlists'));
     if (response.statusCode == 200) {
       final List<dynamic> data = json.decode(response.body);
       return data.map((j) => Playlist.fromJson(j)).toList();
@@ -236,7 +236,7 @@ class ApiService {
 
   /// Get specific playlist with songs
   static Future<Playlist?> getAppPlaylist(String id) async {
-    final response = await http.get(Uri.parse('$baseUrl/api/app-playlists/$id'));
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/app-playlists/$id'));
     if (response.statusCode == 200) {
       return Playlist.fromJson(json.decode(response.body));
     }
@@ -246,7 +246,7 @@ class ApiService {
   /// Generate new random playlist
   static Future<void> generateAppPlaylist() async {
     await http.post(
-      Uri.parse('$baseUrl/api/app-playlists/generate'),
+      Uri.parse('${AppConfig.baseUrl}/api/app-playlists/generate'),
       headers: {'Content-Type': 'application/json'},
       body: json.encode({'name': 'Discovery Mix'}),
     );
@@ -254,7 +254,7 @@ class ApiService {
 
   /// Import App Playlist to User Library
   static Future<bool> importAppPlaylist(String playlistId) async {
-    final response = await http.post(Uri.parse('$baseUrl/api/playlists/import-app-playlist/$playlistId'));
+    final response = await http.post(Uri.parse('${AppConfig.baseUrl}/api/playlists/import-app-playlist/$playlistId'));
     return response.statusCode == 200;
   }
 }

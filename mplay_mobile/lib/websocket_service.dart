@@ -10,7 +10,7 @@ class WebSocketService {
 
   void connect() {
     try {
-      _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _channel = WebSocketChannel.connect(Uri.parse(AppConfig.wsUrl));
       _channel!.stream.listen(
         (message) {
           // Try to parse as JSON
