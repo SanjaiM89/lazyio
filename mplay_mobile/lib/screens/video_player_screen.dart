@@ -3,6 +3,7 @@ import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:provider/provider.dart';
+import '../services/parallel_proxy_service.dart';
 import '../models.dart';
 import '../constants.dart';
 import '../api_service.dart';
@@ -36,7 +37,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
 
   Future<void> _initializePlayer() async {
     try {
-      String streamUrl = "${AppConfig.baseUrl}/api/stream/${widget.song.id}";
+      // 1. Initialize Proxy (Singleton)
+      final proxy = ParallelProxyService();
+      await proxy.start();
+      
+      // 2. Get Proxy URL
+      final String originalUrl = "${AppConfig.baseUrl}/api/stream/${widget.song.id}";
+      // Convert to Local Proxy URL (http://127.0.0.1:port/stream?url=...)
+      final String streamUrl = proxy.getProxyUrl(originalUrl);
+      
+      print("▶️ Playing via Proxy: $streamUrl");
+      
       _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(streamUrl));
       
       await _videoPlayerController.initialize();
