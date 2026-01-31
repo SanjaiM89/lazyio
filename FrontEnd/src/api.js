@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 const ip = localStorage.getItem('backend_ip') || 'localhost';
 const port = localStorage.getItem('backend_port') || '8000';
 
