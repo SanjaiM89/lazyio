@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { submitYoutubeUrl, getYoutubeStatus, getYoutubePreview, listYoutubeTasks, clearYoutubeTasks, deleteYoutubeTask } from './api';
+import { submitYoutubeUrl, getYoutubeStatus, getYoutubePreview, listYoutubeTasks, clearYoutubeTasks, deleteYoutubeTask, getYoutubeFormats } from './api';
 
 const YouTube = ({ onDownloadComplete, initialQuery }) => {
     const [url, setUrl] = useState('');
@@ -14,9 +14,11 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
     const [taskPagination, setTaskPagination] = useState({ page: 1, pages: 1, total: 0 });
     const [showHistory, setShowHistory] = useState(false);
     const [loadingTasks, setLoadingTasks] = useState(false);
+    const [availableFormats, setAvailableFormats] = useState([]);
     const pollRef = useRef(null);
 
-    const qualityOptions = [
+    // Default options (fallback)
+    const defaultQualityOptions = [
         { value: '320', label: 'Best Quality (320kbps)' },
         { value: '256', label: 'High Quality (256kbps)' },
         { value: '192', label: 'Standard (192kbps)' },
@@ -59,11 +61,9 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
     // Handle initial query from navigation
     useEffect(() => {
         if (initialQuery) {
-            // Check if it's already a URL, otherwise make it a search query
             const isUrl = /^(https?:\/\/)/.test(initialQuery);
             if (isUrl) {
                 setUrl(initialQuery);
-                // Trigger preview fetch
                 handleUrlChange({ target: { value: initialQuery } });
             } else {
                 const searchUrl = `ytsearch1:${initialQuery}`;
@@ -78,15 +78,34 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
         setUrl(newUrl);
         setError('');
         setPreview(null);
+        setAvailableFormats([]);
+        setQuality('320');
 
         if (newUrl && isValidYoutubeUrl(newUrl)) {
             setLoading(true);
             try {
-                const result = await getYoutubePreview(newUrl);
-                if (result.status === 'success') {
-                    setPreview(result.data);
+                // Fetch preview and formats in parallel
+                const [previewResult, formatsResult] = await Promise.all([
+                    getYoutubePreview(newUrl),
+                    getYoutubeFormats(newUrl).catch(() => ({ formats: [] }))
+                ]);
+
+                if (previewResult.status === 'success') {
+                    setPreview(previewResult.data);
+                }
+
+                if (formatsResult.formats && formatsResult.formats.length > 0) {
+                    const dynamicOptions = formatsResult.formats.map(f => ({
+                        value: f.format_id,
+                        label: `${f.ext.toUpperCase()} - ${f.abr ? Math.round(f.abr) + 'kbps' : 'Unknown'} ${f.filesize ? '(' + (f.filesize / 1024 / 1024).toFixed(1) + 'MB)' : ''} ${f.note ? '- ' + f.note : ''}`
+                    }));
+                    setAvailableFormats(dynamicOptions);
+                    if (dynamicOptions.length > 0) {
+                        setQuality(dynamicOptions[0].value);
+                    }
                 }
             } catch (err) {
+                console.error(err);
                 setError('Could not fetch video info');
             } finally {
                 setLoading(false);
@@ -108,7 +127,6 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
             const result = await submitYoutubeUrl(url, quality);
             setTaskId(result.task_id);
 
-            // Start polling for status
             pollRef.current = setInterval(async () => {
                 try {
                     const statusResult = await getYoutubeStatus(result.task_id);
@@ -117,16 +135,16 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                     if (['completed', 'failed', 'cancelled'].includes(statusResult.status)) {
                         clearInterval(pollRef.current);
                         setDownloading(false);
-                        loadTasks(); // Refresh task list
+                        loadTasks();
 
                         if (statusResult.status === 'completed') {
                             setTimeout(() => {
                                 onDownloadComplete?.();
-                                // Reset form
                                 setUrl('');
                                 setPreview(null);
                                 setStatus(null);
                                 setTaskId(null);
+                                setAvailableFormats([]);
                             }, 1500);
                         } else if (statusResult.status === 'failed') {
                             setError(statusResult.error || 'Download failed');
@@ -198,10 +216,43 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
         }
     };
 
+    // Render Helpers
+    const renderQualitySelector = () => (
+        <div className="flex flex-col sm:flex-row gap-4 mb-6 animate-slide-up" style={{ animationDelay: '0.15s' }}>
+            <div className="flex-1">
+                <label className="block text-sm text-white/50 mb-2">
+                    {availableFormats.length > 0 ? 'Select Format' : 'Audio Quality'}
+                </label>
+                <select
+                    value={quality}
+                    onChange={(e) => setQuality(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-pink-500/50 transition-all appearance-none cursor-pointer"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '16px' }}
+                >
+                    {(availableFormats.length > 0 ? availableFormats : defaultQualityOptions).map(opt => (
+                        <option key={opt.value} value={opt.value} className="bg-gray-900">
+                            {opt.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div className="flex items-end">
+                <button
+                    onClick={handleDownload}
+                    className="btn-primary px-8 py-3 flex items-center gap-2 w-full sm:w-auto justify-center"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download Audio
+                </button>
+            </div>
+        </div>
+    );
+
     return (
         <div className="flex-1 overflow-y-auto p-8">
             <div className="max-w-2xl mx-auto">
-                {/* Header */}
                 <div className="text-center mb-10 animate-fade-in">
                     <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-red-500/20 to-pink-600/20 mb-6">
                         <svg className="w-10 h-10 text-red-500" viewBox="0 0 24 24" fill="currentColor">
@@ -214,7 +265,6 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                     <p className="text-white/50">Download high-quality audio from any YouTube video</p>
                 </div>
 
-                {/* URL Input */}
                 <div className="glass rounded-2xl p-6 mb-6 animate-slide-up">
                     <div className="relative">
                         <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
@@ -247,17 +297,12 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                     )}
                 </div>
 
-                {/* Preview Card */}
                 {preview && !downloading && (
                     <div className="glass rounded-2xl overflow-hidden mb-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
                         <div className="flex gap-4 p-4">
                             <div className="relative w-40 h-24 rounded-xl overflow-hidden flex-shrink-0">
                                 {preview.thumbnail ? (
-                                    <img
-                                        src={preview.thumbnail}
-                                        alt={preview.title}
-                                        className="w-full h-full object-cover"
-                                    />
+                                    <img src={preview.thumbnail} alt={preview.title} className="w-full h-full object-cover" />
                                 ) : (
                                     <div className="w-full h-full bg-white/10 flex items-center justify-center">
                                         <svg className="w-8 h-8 text-white/20" fill="currentColor" viewBox="0 0 24 24">
@@ -282,48 +327,13 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                     </div>
                 )}
 
-                {/* Quality Selector & Download Button */}
-                {preview && !downloading && (
-                    <div className="flex flex-col sm:flex-row gap-4 mb-6 animate-slide-up" style={{ animationDelay: '0.15s' }}>
-                        <div className="flex-1">
-                            <label className="block text-sm text-white/50 mb-2">Audio Quality</label>
-                            <select
-                                value={quality}
-                                onChange={(e) => setQuality(e.target.value)}
-                                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-pink-500/50 transition-all appearance-none cursor-pointer"
-                                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '16px' }}
-                            >
-                                {qualityOptions.map(opt => (
-                                    <option key={opt.value} value={opt.value} className="bg-gray-900">
-                                        {opt.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div className="flex items-end">
-                            <button
-                                onClick={handleDownload}
-                                className="btn-primary px-8 py-3 flex items-center gap-2 w-full sm:w-auto justify-center"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                Download Audio
-                            </button>
-                        </div>
-                    </div>
-                )}
+                {preview && !downloading && renderQualitySelector()}
 
-                {/* Download Progress */}
                 {downloading && status && (
                     <div className="glass rounded-2xl p-6 mb-6 animate-slide-up">
                         <div className="flex items-center gap-4 mb-4">
                             {preview?.thumbnail && (
-                                <img
-                                    src={preview.thumbnail}
-                                    alt=""
-                                    className="w-16 h-16 rounded-lg object-cover"
-                                />
+                                <img src={preview.thumbnail} alt="" className="w-16 h-16 rounded-lg object-cover" />
                             )}
                             <div className="flex-1 min-w-0">
                                 <p className="font-semibold truncate">{status.title || preview?.title || 'Downloading...'}</p>
@@ -331,15 +341,9 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                             </div>
                         </div>
 
-                        {/* Progress Bar */}
                         <div className="relative h-2 bg-white/10 rounded-full overflow-hidden mb-3">
                             <div
-                                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${status.status === 'completed'
-                                    ? 'bg-green-500'
-                                    : status.status === 'failed'
-                                        ? 'bg-red-500'
-                                        : 'bg-gradient-to-r from-pink-500 to-purple-500'
-                                    }`}
+                                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${status.status === 'completed' ? 'bg-green-500' : status.status === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-pink-500 to-purple-500'}`}
                                 style={{ width: `${status.progress || 0}%` }}
                             />
                             {status.status !== 'completed' && status.status !== 'failed' && (
@@ -348,9 +352,7 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                         </div>
 
                         <div className="flex justify-between items-center text-sm">
-                            <span className={getStatusColor(status.status)}>
-                                {getStatusText(status.status)}
-                            </span>
+                            <span className={getStatusColor(status.status)}>{getStatusText(status.status)}</span>
                             <span className="text-white/50">{Math.round(status.progress || 0)}%</span>
                         </div>
 
@@ -367,15 +369,6 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                     </div>
                 )}
 
-                {/* Instructions when no preview */}
-                {!preview && !downloading && (
-                    <div className="text-center text-white/30 text-sm mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
-                        <p className="mb-2">Supported formats:</p>
-                        <p>youtube.com/watch • youtu.be • YouTube Shorts • YouTube Music</p>
-                    </div>
-                )}
-
-                {/* Task History Section */}
                 <div className="glass rounded-2xl p-6 animate-slide-up" style={{ animationDelay: '0.25s' }}>
                     <div className="flex justify-between items-center mb-4">
                         <button
@@ -417,25 +410,16 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                             ) : (
                                 <div className="space-y-3">
                                     {tasks.map((task) => (
-                                        <div
-                                            key={task.task_id}
-                                            className="flex items-center gap-3 p-3 rounded-xl bg-white/5 group"
-                                        >
+                                        <div key={task.task_id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 group">
                                             {task.thumbnail && (
-                                                <img
-                                                    src={task.thumbnail}
-                                                    alt=""
-                                                    className="w-12 h-12 rounded-lg object-cover flex-shrink-0"
-                                                />
+                                                <img src={task.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
                                             )}
                                             <div className="flex-1 min-w-0">
                                                 <p className="font-medium text-sm truncate">{task.title || 'Unknown'}</p>
                                                 <p className="text-xs text-white/40 truncate">{task.artist || ''}</p>
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <span className={`text-xs ${getStatusColor(task.status)}`}>
-                                                    {getStatusText(task.status)}
-                                                </span>
+                                                <span className={`text-xs ${getStatusColor(task.status)}`}>{getStatusText(task.status)}</span>
                                                 <button
                                                     onClick={() => handleDeleteTask(task.task_id)}
                                                     className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition"
@@ -448,7 +432,6 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                                         </div>
                                     ))}
 
-                                    {/* Pagination */}
                                     {taskPagination.pages > 1 && (
                                         <div className="flex justify-center items-center gap-2 pt-4">
                                             <button
@@ -458,9 +441,7 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                                             >
                                                 ←
                                             </button>
-                                            <span className="text-sm text-white/50">
-                                                {taskPagination.page} / {taskPagination.pages}
-                                            </span>
+                                            <span className="text-sm text-white/50">{taskPagination.page} / {taskPagination.pages}</span>
                                             <button
                                                 onClick={() => loadTasks(taskPagination.page + 1)}
                                                 disabled={taskPagination.page >= taskPagination.pages}
@@ -475,18 +456,17 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                         </>
                     )}
                 </div>
-            </div>
 
-            {/* Add shimmer animation */}
-            <style>{`
-                @keyframes shimmer {
-                    0% { transform: translateX(-100%); }
-                    100% { transform: translateX(100%); }
-                }
-                .animate-shimmer {
-                    animation: shimmer 1.5s infinite;
-                }
-            `}</style>
+                <style>{`
+                    @keyframes shimmer {
+                        0% { transform: translateX(-100%); }
+                        100% { transform: translateX(100%); }
+                    }
+                    .animate-shimmer {
+                        animation: shimmer 1.5s infinite;
+                    }
+                `}</style>
+            </div>
         </div>
     );
 };

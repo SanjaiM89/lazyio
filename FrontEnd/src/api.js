@@ -151,6 +151,11 @@ export const deleteYoutubeTask = async (taskId) => {
     return response.data;
 };
 
+export const getYoutubeFormats = async (url) => {
+    const response = await api.post('/youtube/formats', { url });
+    return response.data;
+};
+
 // ==================== Songs Management ====================
 
 export const getSongsPaginated = async (page = 1, limit = 20) => {

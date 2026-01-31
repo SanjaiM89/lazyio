@@ -1194,6 +1194,17 @@ async def youtube_download(request: YouTubeRequest):
 
 
 
+@app.post("/api/youtube/formats")
+async def get_youtube_formats_endpoint(request: YoutubeURLRequest):
+    """Get available audio formats for a YouTube video"""
+    try:
+        formats = await youtube_downloader.get_formats(request.url)
+        return {"status": "success", "formats": formats}
+    except Exception as e:
+        print(f"[YT] Format fetch error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/api/youtube/status/{task_id}")
 async def youtube_status(task_id: str):
     """
