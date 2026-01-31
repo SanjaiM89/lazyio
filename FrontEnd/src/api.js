@@ -1,10 +1,16 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const ip = localStorage.getItem('backend_ip') || 'localhost';
+const port = localStorage.getItem('backend_port') || '8000';
+const API_BASE_URL = `http://${ip}:${port}/api`;
+const WS_BASE_URL = `ws://${ip}:${port}/ws`; // Export this if strictly needed in App.jsx, but App.jsx might need update too
 
 const api = axios.create({
     baseURL: API_BASE_URL,
 });
+
+export const getWsUrl = () => `ws://${ip}:${port}/ws`;
+
 
 export const getSongs = async () => {
     const response = await api.get('/songs');
