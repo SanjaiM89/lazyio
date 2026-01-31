@@ -625,14 +625,26 @@ class YouTubeDownloader:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9",
                 },
-                # Force android_vr (documented fallback for no-JS) and tv_embedded
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android_vr", "tv_embedded", "ios_downgraded"]
-                    }
-                },
+                # Provide Deno binary path (installed in .deno/bin/deno relative to home or current)
+                "ffmpeg_location": "/usr/bin/ffmpeg", # Ensure ffmpeg is found (optional)
+                
+                # IMPORTANT: Point to the installed Deno binary
+                # We try common paths since we don't know exact home dir expansion in opts
+                # But we can update the ENV path or pass it here.
+                # Simplest is to let yt-dlp find it if we add to PATH, or specify exact.
+                # Let's rely on standard logic but remove the forced client restriction 
+                # so it can use the JS runtime now that we have it.
+                
+                # "extractor_args": {}, # Removed forced client
             }
             
+            # Add Deno to PATH for this process if not present
+            home = os.path.expanduser("~")
+            deno_path = os.path.join(home, ".deno", "bin")
+            if deno_path not in os.environ["PATH"]:
+                os.environ["PATH"] += os.pathsep + deno_path
+                print(f"[YT] Added Deno to PATH: {deno_path}")
+                
             # Use cookies file if it exists (for deployed servers)
             if os.path.exists(COOKIES_FILE):
                 opts["cookiefile"] = COOKIES_FILE
