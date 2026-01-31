@@ -180,28 +180,45 @@ class TelegramClientWrapper:
             return None
 
     async def get_file_info(self, message_id: int) -> Dict[str, Any]:
-        try:
-            # Try fetching message
-            message = await self.client.get_messages(self.bin_channel, ids=message_id)
+        """Fetch metadata, rotating through workers to avoid FloodWait."""
+        last_error = None
+        
+        # Determine start index for round-robin validation
+        # We start with a random worker to distribute check load
+        import random
+        start_idx = random.randint(0, len(self.clients) - 1)
+        
+        for i in range(len(self.clients)):
+            idx = (start_idx + i) % len(self.clients)
+            client = self.clients[idx]
             
-            # If not found, maybe channel cache is stale? Try resolving again.
-            if not message:
-                print(f"[TG] Message {message_id} not found immediately. Retrying with entity resolution...")
-                await self._resolve_bin_channel()
-                message = await self.client.get_messages(self.bin_channel, ids=message_id)
+            try:
+                # Try fetching message
+                message = await client.get_messages(self.bin_channel, ids=message_id)
+                
+                # If not found, maybe channel cache is stale for this worker?
+                if not message:
+                    try:
+                        await client.get_input_entity(self.bin_channel)
+                        message = await client.get_messages(self.bin_channel, ids=message_id)
+                    except:
+                        pass
 
-            if not message or not message.media:
-                print(f"[TG] Message {message_id} is missing or has no media in channel {self.bin_channel}")
-                raise FileNotFound("No media found")
-            
-            return {
-                "file_name": message.file.name or f"file_{message_id}.mp3",
-                "mime_type": message.file.mime_type or mimetypes.guess_type(message.file.name or "")[0] or "audio/mpeg",
-                "file_size": message.file.size
-            }
-        except Exception as e:
-            print(f"[TG] Error get_file_info(id={message_id}, ch={self.bin_channel}): {e}")
-            raise FileNotFound(f"Message {message_id} not found")
+                if message and message.media:
+                    return {
+                        "file_name": message.file.name or f"file_{message_id}.mp3",
+                        "mime_type": message.file.mime_type or mimetypes.guess_type(message.file.name or "")[0] or "audio/mpeg",
+                        "file_size": message.file.size
+                    }
+            except Exception as e:
+                # Log usage only if it's not a common "message not found" logic error
+                # print(f"[TG] Worker {idx} check failed: {e}")
+                last_error = e
+        
+        # If we get here, all workers failed
+        print(f"[TG] Error get_file_info(id={message_id}) failed on ALL workers. Last error: {last_error}")
+        raise FileNotFound(f"Message {message_id} not found")
+
 
     async def stream_file(self, message_id: int, offset: int = 0, limit: int = 0) -> AsyncGenerator[bytes, None]:
         """
@@ -223,10 +240,20 @@ class TelegramClientWrapper:
             try:
                 message = await client.get_messages(self.bin_channel, ids=message_id)
             except Exception as e:
-                print(f"[STREAM] Worker {worker_idx} failed metadata: {e}. Fallback to Worker 0.")
-                worker_idx = 0
-                client = self.clients[0]
-                message = await client.get_messages(self.bin_channel, ids=message_id)
+                print(f"[STREAM] Worker {worker_idx} failed metadata: {e}. trying others...")
+                # Try finding ANY worker that can see the message
+                message = None
+                for i in range(len(self.clients)):
+                    if i == worker_idx: continue
+                    try:
+                        msg_check = await self.clients[i].get_messages(self.bin_channel, ids=message_id)
+                        if msg_check and msg_check.media:
+                            client = self.clients[i]
+                            message = msg_check
+                            print(f"[STREAM] Failover success: Switched to Worker {i}")
+                            break
+                    except:
+                        continue
 
             if not message or not message.media:
                 raise FileNotFound(f"Message {message_id} not found")
