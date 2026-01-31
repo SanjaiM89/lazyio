@@ -266,13 +266,15 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                   ${currentSong?.id === song.id ? 'bg-pink-500/10' : ''}`}
                                 onClick={() => onSelectSong(song)}
                             >
-                                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0">
+                                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
                                     {currentSong?.id === song.id && isPlaying ? (
                                         <div className="flex items-end gap-0.5 h-4">
                                             {[...Array(3)].map((_, i) => (
                                                 <div key={i} className="w-1 bg-pink-500 rounded-full visualizer-bar" style={{ animationDelay: `${i * 0.1}s` }} />
                                             ))}
                                         </div>
+                                    ) : (song.cover_art || song.thumbnail) ? (
+                                        <img src={song.cover_art || song.thumbnail} alt="" className="w-full h-full object-cover" />
                                     ) : (
                                         <span className="text-white/40 text-sm">{index + 1}</span>
                                     )}

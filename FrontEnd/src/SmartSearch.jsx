@@ -76,7 +76,7 @@ const SmartSearch = ({ songs, onSelectSong }) => {
                                 className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 cursor-pointer transition"
                             >
                                 <img
-                                    src={song.thumbnail || song.coverArt || '/default-cover.png'}
+                                    src={song.cover_art || song.thumbnail || 'https://via.placeholder.com/40'}
                                     className="w-10 h-10 rounded bg-white/5 object-cover"
                                     onError={(e) => e.target.src = 'https://via.placeholder.com/40'}
                                 />

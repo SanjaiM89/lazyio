@@ -174,13 +174,15 @@ function App() {
                       style={{ animationDelay: `${index * 0.05}s` }}
                       onClick={() => handlePlaySong(song)}
                     >
-                      <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0">
+                      <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
                         {currentSong?.id === song.id ? (
                           <div className="flex items-end gap-0.5 h-5">
                             {[...Array(3)].map((_, i) => (
                               <div key={i} className="w-1 bg-pink-500 rounded-full visualizer-bar" style={{ animationDelay: `${i * 0.1}s` }} />
                             ))}
                           </div>
+                        ) : (song.cover_art || song.thumbnail) ? (
+                          <img src={song.cover_art || song.thumbnail} alt="" className="w-full h-full object-cover" />
                         ) : (
                           <span className="text-white/40">{index + 1}</span>
                         )}
