@@ -1226,6 +1226,111 @@ async def get_youtube_formats_endpoint(request: YouTubePreviewRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+# ==================== VidsSave YouTube Download API (Alternative) ====================
+from vidssave_downloader import vidssave_downloader, get_vidssave_task, VidsSaveDownloadStatus
+
+@app.post("/api/vidssave/preview")
+async def vidssave_preview(request: YouTubePreviewRequest):
+    """Get video preview info using VidsSave API"""
+    try:
+        info = await vidssave_downloader.get_video_info(request.url)
+        return {
+            "status": "success",
+            "title": info["title"],
+            "artist": info["artist"],
+            "thumbnail": info["thumbnail"],
+            "duration": info["duration"]
+        }
+    except Exception as e:
+        print(f"[VidsSave] Preview error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/vidssave/formats")
+async def vidssave_formats(request: YouTubePreviewRequest):
+    """Get available formats from VidsSave"""
+    try:
+        formats = await vidssave_downloader.get_formats(request.url)
+        return {"status": "success", "formats": formats}
+    except Exception as e:
+        print(f"[VidsSave] Format fetch error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/vidssave/download")
+async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeRequest):
+    """
+    Start a download using VidsSave backend.
+    Downloads highest quality video and converts to audio.
+    """
+    import uuid
+    task_id = str(uuid.uuid4())
+    
+    async def process_vidssave_download(task_id: str, url: str):
+        """Background task to handle VidsSave download"""
+        try:
+            task = await vidssave_downloader.download_and_convert(
+                url=url,
+                task_id=task_id,
+                broadcast_callback=notify_update
+            )
+            
+            if task.status == VidsSaveDownloadStatus.COMPLETE and task.file_path:
+                # Upload to Telegram
+                await notify_update("youtube_progress", {
+                    "task_id": task_id,
+                    "status": "uploading_to_telegram",
+                    "progress": 85,
+                    "message": "Uploading to Telegram..."
+                })
+                
+                tg_msg = await tg_client.upload_file(task.file_path)
+                if tg_msg:
+                    # Save to database
+                    from database import add_song
+                    await add_song(
+                        telegram_file_id=str(tg_msg.id),
+                        audio_telegram_id=str(tg_msg.id),
+                        title=task.title,
+                        artist=task.artist,
+                        duration=task.duration,
+                        file_name=os.path.basename(task.file_path),
+                        file_size=os.path.getsize(task.file_path) if task.file_path else 0
+                    )
+                    
+                    await notify_update("youtube_progress", {
+                        "task_id": task_id,
+                        "status": "complete",
+                        "progress": 100,
+                        "message": "Added to library!"
+                    })
+                    
+                    # Cleanup
+                    if os.path.exists(task.file_path):
+                        os.remove(task.file_path)
+                else:
+                    await notify_update("youtube_progress", {
+                        "task_id": task_id,
+                        "status": "failed",
+                        "error": "Failed to upload to Telegram"
+                    })
+        except Exception as e:
+            print(f"[VidsSave] Background task error: {e}")
+            await notify_update("youtube_progress", {
+                "task_id": task_id,
+                "status": "failed",
+                "error": str(e)
+            })
+    
+    background_tasks.add_task(process_vidssave_download, task_id, request.url)
+    
+    return {
+        "status": "queued",
+        "task_id": task_id,
+        "message": "Download started using VidsSave backend"
+    }
+
+
 @app.get("/api/youtube/status/{task_id}")
 async def youtube_status(task_id: str):
     """
