@@ -213,12 +213,8 @@ class YouTubeDownloader:
             "check_formats": False,  # --no-check-formats: Don't verify format availability
             # Use format_sort (-S) instead of format (-f) per user's GitHub suggestion
             "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-            # android_vr confirmed working in local tests (Jul 2026)
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["android_vr"],
-                }
-            },
+            # Let yt-dlp use default clients: android_vr, ios_downgraded, web, web_safari
+            # Don't restrict to single client as it may fail
         }
         
         # Use cookies file if it exists (for deployed servers)
@@ -435,12 +431,7 @@ class YouTubeDownloader:
                 "no_warnings": True,
                 # Per yt-dlp docs: Use -S instead of strict -f to prefer but not require formats
                 "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-                # android_vr confirmed working in local tests (Jul 2026)
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android_vr"],
-                    }
-                },
+                # Let yt-dlp use default clients (don't restrict)
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
                 "merge_output_format": "mp4",
                 "writethumbnail": True,
@@ -574,12 +565,7 @@ class YouTubeDownloader:
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
-                # android_vr confirmed working in local tests (Jul 2026)
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["android_vr"],
-                    }
-                },
+                # Let yt-dlp use default clients (don't restrict to single client)
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
                 "postprocessors": [
                     {
