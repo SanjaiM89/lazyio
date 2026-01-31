@@ -25,18 +25,22 @@ const SettingsModal = ({ open, onClose }) => {
         <Modal open={open} onClose={onClose}>
             <Modal.Title>Connection Settings</Modal.Title>
             <div className="px-6 py-4 space-y-4">
+                <div className="bg-blue-500/10 border border-blue-500/20 text-blue-200 text-sm p-4 rounded-xl">
+                    <p>Enter your backend server details. </p>
+                    <p className="opacity-70 mt-1">If using a hosted backend (Render/Fly), paste the full URL (e.g., https://myapp.onrender.com) in the Address field and leave Port empty.</p>
+                </div>
                 <div>
-                    <label className="block text-sm font-medium text-white/60 mb-1">Backend IP Address</label>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Server Address / IP</label>
                     <input
                         type="text"
                         value={ip}
                         onChange={(e) => setIp(e.target.value)}
-                        placeholder="localhost"
+                        placeholder="localhost or https://myapp.com"
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-4 text-white placeholder-white/30 focus:outline-none focus:border-pink-500/50 transition"
                     />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-white/60 mb-1">Backend Port</label>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Port (Optional)</label>
                     <input
                         type="text"
                         value={port}
