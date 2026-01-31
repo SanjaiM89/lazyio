@@ -301,66 +301,53 @@ async def upload_files(files: list[UploadFile] = File(...)):
     For video files: also extracts audio and uploads as separate stream.
     Broadcasts progress via WebSocket.
     """
+    # ... (imports inside function if needed, or rely on global)
     from audio_extractor import extract_audio_from_video, cleanup_extracted_file
     
     VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
     uploaded_songs = []
     total_files = len(files)
-    
-    for i, file in enumerate(files):
-        file_name = file.filename or f"unknown_{i}"
-        temp_path = os.path.join(TEMP_DIR, file_name)
-        
+    loop = asyncio.get_event_loop()
+
+    async def process_file(file_path, file_name, file_index):
         try:
-            # Broadcast: Starting upload for this file
-            await notify_update("upload_progress", {
-                "file_name": file_name,
-                "file_index": i,
-                "total_files": total_files,
-                "stage": "saving",
-                "message": f"Saving {file_name}..."
-            })
-            
-            with open(temp_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            
             # Check if it's a video file
             is_video = any(file_name.lower().endswith(ext) for ext in VIDEO_EXTENSIONS)
             
             # Broadcast: Extracting metadata
             await notify_update("upload_progress", {
                 "file_name": file_name,
-                "file_index": i,
+                "file_index": file_index,
                 "total_files": total_files,
                 "stage": "metadata",
                 "message": f"Extracting metadata from {file_name}..."
             })
             
             # Extract Metadata
-            meta = await extract_metadata(temp_path)
+            meta = await extract_metadata(file_path)
             
             # Broadcast: Uploading to Telegram
             await notify_update("upload_progress", {
                 "file_name": file_name,
-                "file_index": i,
+                "file_index": file_index,
                 "total_files": total_files,
                 "stage": "telegram",
                 "message": f"Uploading {file_name} to Telegram..."
             })
             
             # Upload main file to Telegram (video or audio)
-            tg_msg = await tg_client.upload_file(temp_path)
+            tg_msg = await tg_client.upload_file(file_path)
             if not tg_msg:
                 await notify_update("upload_progress", {
                     "file_name": file_name,
-                    "file_index": i,
+                    "file_index": file_index,
                     "total_files": total_files,
                     "stage": "error",
                     "message": f"Failed to upload {file_name} to Telegram"
                 })
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
-                continue
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                return
                 
             telegram_ref = str(tg_msg.id)
             
@@ -374,14 +361,14 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 # Broadcast: Extracting audio
                 await notify_update("upload_progress", {
                     "file_name": file_name,
-                    "file_index": i,
+                    "file_index": file_index,
                     "total_files": total_files,
                     "stage": "extracting_audio",
                     "message": f"Extracting audio from {file_name}..."
                 })
                 
                 # Extract audio from video
-                audio_path = await extract_audio_from_video(temp_path)
+                audio_path = await extract_audio_from_video(file_path)
                 if audio_path:
                     audio_msg = await tg_client.upload_file(audio_path)
                     if audio_msg:
@@ -394,7 +381,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
             # Broadcast: Saving to database
             await notify_update("upload_progress", {
                 "file_name": file_name,
-                "file_index": i,
+                "file_index": file_index,
                 "total_files": total_files,
                 "stage": "database",
                 "message": f"Saving {file_name} to database..."
@@ -412,38 +399,72 @@ async def upload_files(files: list[UploadFile] = File(...)):
                 duration=meta.get("duration"),
                 cover_art=meta.get("cover_art"),
                 file_name=file_name,
-                file_size=os.path.getsize(temp_path)
+                file_size=os.path.getsize(file_path)
             )
-            
-            uploaded_songs.append({"id": song_id, "title": meta.get("title")})
             
             # Broadcast: File complete
             await notify_update("upload_progress", {
                 "file_name": file_name,
-                "file_index": i,
+                "file_index": file_index,
                 "total_files": total_files,
                 "stage": "complete",
                 "message": f"Upload complete: {meta.get('title', file_name)}"
             })
             
         except Exception as e:
-            print(f"[UPLOAD] Error uploading {file_name}: {e}")
+            print(f"[UPLOAD] Error processing {file_name}: {e}")
             await notify_update("upload_progress", {
                 "file_name": file_name,
-                "file_index": i,
+                "file_index": file_index,
                 "total_files": total_files,
                 "stage": "error",
                 "message": f"Error: {str(e)}"
             })
         finally:
             # Cleanup
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                
+        # Send overall completion if this was the last file? 
+        # Ideally we track all tasks, but simplified:
+        await notify_update("upload_complete", {"count": 1}) # Simple notification per file
+
+    for i, file in enumerate(files):
+        file_name = file.filename or f"unknown_{i}"
+        temp_path = os.path.join(TEMP_DIR, file_name)
         
-    # Broadcast: All uploads complete
-    await notify_update("upload_complete", {"count": len(uploaded_songs)})
+        try:
+            # Broadcast: Starting upload for this file
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "saving",
+                "message": f"Saving {file_name}..."
+            })
+            
+            # Non-blocking file save
+            def _save_file():
+                with open(temp_path, "wb") as buffer:
+                    shutil.copyfileobj(file.file, buffer)
+            
+            await loop.run_in_executor(None, _save_file)
+            
+            # Offload processing to background task
+            background_tasks.add_task(process_file, temp_path, file_name, i)
+            uploaded_songs.append({"file_name": file_name, "status": "processing"})
+            
+        except Exception as e:
+            print(f"[UPLOAD] Error saving {file_name}: {e}")
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "stage": "error",
+                "message": f"Error saving file: {str(e)}"
+            })
     
-    return {"status": "success", "uploaded": uploaded_songs}
+    # Return immediately while processing happens in background
+    return {"status": "success", "message": "Uploads started in background", "files": uploaded_songs}
 
 @app.get("/api/songs")
 async def list_songs():
