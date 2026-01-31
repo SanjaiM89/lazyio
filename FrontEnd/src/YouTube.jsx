@@ -5,14 +5,14 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
     const [url, setUrl] = useState('');
     const [preview, setPreview] = useState(null);
     const [loading, setLoading] = useState(false);
-    const [downloading, setDownloading] = useState(false);
-    const [taskId, setTaskId] = useState(null);
-    const [status, setStatus] = useState(null);
+    // Removed blocking 'downloading' state
     const [error, setError] = useState('');
     const [quality, setQuality] = useState('320');
+
+    // Tasks State
     const [tasks, setTasks] = useState([]);
     const [taskPagination, setTaskPagination] = useState({ page: 1, pages: 1, total: 0 });
-    const [showHistory, setShowHistory] = useState(false);
+    const [showHistory, setShowHistory] = useState(true); // Always show history/queue
     const [loadingTasks, setLoadingTasks] = useState(false);
     const [availableFormats, setAvailableFormats] = useState([]);
     const pollRef = useRef(null);
@@ -38,24 +38,40 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
     };
 
     const loadTasks = async (page = 1) => {
-        setLoadingTasks(true);
+        // Don't set loadingTasks on polling to avoid flicker
         try {
-            const result = await listYoutubeTasks(page, 5);
+            const result = await listYoutubeTasks(page, 10); // Check 10 items
             setTasks(result.tasks || []);
             setTaskPagination({
                 page: result.page,
                 pages: result.pages,
                 total: result.total
             });
+            return result.tasks || [];
         } catch (err) {
             console.error('Failed to load tasks:', err);
-        } finally {
-            setLoadingTasks(false);
+            return [];
         }
     };
 
+    // Global Polling for tasks
     useEffect(() => {
-        loadTasks();
+        loadTasks(); // Initial load
+
+        // Poll every 2 seconds
+        const interval = setInterval(async () => {
+            const currentTasks = await loadTasks();
+
+            // If any task is running/queued, keep polling accurately
+            // If all are complete/failed, we could slow down, but for now fixed interval is fine
+            const hasActive = currentTasks.some(t => ['queued', 'downloading', 'converting', 'uploading_to_telegram', 'uploading_video'].includes(t.status));
+
+            if (!hasActive && pollRef.current) {
+                // Optional: Slow down polling if nothing active?
+            }
+        }, 2000);
+
+        return () => clearInterval(interval);
     }, []);
 
     // Handle initial query from navigation
@@ -77,14 +93,19 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
         const newUrl = e.target.value;
         setUrl(newUrl);
         setError('');
-        setPreview(null);
-        setAvailableFormats([]);
-        setQuality('320');
+
+        // Reset only if clearing
+        if (!newUrl) {
+            setPreview(null);
+            setAvailableFormats([]);
+            return;
+        }
 
         if (newUrl && isValidYoutubeUrl(newUrl)) {
             setLoading(true);
             try {
                 // Fetch preview and formats in parallel
+                // Debounce could be added here ideally
                 const [previewResult, formatsResult] = await Promise.all([
                     getYoutubePreview(newUrl),
                     getYoutubeFormats(newUrl).catch(() => ({ formats: [] }))
@@ -97,7 +118,7 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                 if (formatsResult.formats && formatsResult.formats.length > 0) {
                     const dynamicOptions = formatsResult.formats.map(f => ({
                         value: f.format_id,
-                        label: `${f.ext.toUpperCase()} - ${f.abr ? Math.round(f.abr) + 'kbps' : 'Unknown'} ${f.filesize ? '(' + (f.filesize / 1024 / 1024).toFixed(1) + 'MB)' : ''} ${f.note ? '- ' + f.note : ''}`
+                        label: `${f.ext.toUpperCase()} - ${f.abr ? Math.round(f.abr) + 'kbps' : (f.note || f.quality || 'Unknown')} ${f.filesize ? '(' + (f.filesize / 1024 / 1024).toFixed(1) + 'MB)' : ''}`
                     }));
                     setAvailableFormats(dynamicOptions);
                     if (dynamicOptions.length > 0) {
@@ -106,7 +127,7 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                 }
             } catch (err) {
                 console.error(err);
-                setError('Could not fetch video info');
+                // Don't show error immediately on typing, wait for submit
             } finally {
                 setLoading(false);
             }
@@ -119,353 +140,209 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
             return;
         }
 
-        setDownloading(true);
         setError('');
-        setStatus(null);
 
         try {
-            const result = await submitYoutubeUrl(url, quality);
-            setTaskId(result.task_id);
+            // Submit and forget - the poller will pick it up
+            await submitYoutubeUrl(url, quality);
 
-            pollRef.current = setInterval(async () => {
-                try {
-                    const statusResult = await getYoutubeStatus(result.task_id);
-                    setStatus(statusResult);
+            // Immediate feedback
+            setUrl('');
+            setPreview(null);
+            setAvailableFormats([]);
+            setQuality('320');
 
-                    if (['completed', 'failed', 'cancelled'].includes(statusResult.status)) {
-                        clearInterval(pollRef.current);
-                        setDownloading(false);
-                        loadTasks();
+            // Force an immediate reload to show the "Queued" task instantly
+            setTimeout(() => loadTasks(), 200);
 
-                        if (statusResult.status === 'completed') {
-                            setTimeout(() => {
-                                onDownloadComplete?.();
-                                setUrl('');
-                                setPreview(null);
-                                setStatus(null);
-                                setTaskId(null);
-                                setAvailableFormats([]);
-                            }, 1500);
-                        } else if (statusResult.status === 'failed') {
-                            setError(statusResult.error || 'Download failed');
-                        }
-                    }
-                } catch (err) {
-                    console.error('Status poll error:', err);
-                }
-            }, 1000);
         } catch (err) {
-            setError(err.message || 'Failed to start download');
-            setDownloading(false);
+            setError(err.response?.data?.detail || 'Failed to start download');
         }
     };
 
-    const handleClearAll = async () => {
-        if (!confirm('Clear all download history?')) return;
-        try {
-            await clearYoutubeTasks();
-            setTasks([]);
-            setTaskPagination({ page: 1, pages: 1, total: 0 });
-        } catch (err) {
-            console.error('Failed to clear tasks:', err);
-        }
-    };
-
-    const handleDeleteTask = async (taskId) => {
-        try {
+    const handleDeleteTask = async (taskId, e) => {
+        e.stopPropagation();
+        if (confirm('Delete this task from history?')) {
             await deleteYoutubeTask(taskId);
-            loadTasks(taskPagination.page);
-        } catch (err) {
-            console.error('Failed to delete task:', err);
+            loadTasks();
         }
     };
 
-    useEffect(() => {
-        return () => {
-            if (pollRef.current) clearInterval(pollRef.current);
-        };
-    }, []);
-
-    const formatDuration = (seconds) => {
-        if (!seconds) return '--:--';
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    const getStatusText = (statusVal) => {
-        switch (statusVal) {
-            case 'pending': return 'Preparing...';
-            case 'fetching_info': return 'Fetching...';
-            case 'downloading': return 'Downloading...';
-            case 'converting': return 'Converting...';
-            case 'uploading': return 'Uploading...';
-            case 'completed': return '✓ Complete';
-            case 'failed': return '✗ Failed';
-            case 'cancelled': return 'Cancelled';
-            default: return statusVal;
+    const handleClearHistory = async () => {
+        if (confirm('Clear all task history?')) {
+            await clearYoutubeTasks();
+            loadTasks();
         }
     };
 
-    const getStatusColor = (statusVal) => {
-        switch (statusVal) {
-            case 'completed': return 'text-green-400';
-            case 'failed': return 'text-red-400';
-            case 'cancelled': return 'text-yellow-400';
-            default: return 'text-white/50';
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 'completed': return 'bg-green-500';
+            case 'failed': return 'bg-red-500';
+            case 'cancelled': return 'bg-gray-500';
+            default: return 'bg-pink-500';
         }
     };
-
-    // Render Helpers
-    const renderQualitySelector = () => (
-        <div className="flex flex-col sm:flex-row gap-4 mb-6 animate-slide-up" style={{ animationDelay: '0.15s' }}>
-            <div className="flex-1">
-                <label className="block text-sm text-white/50 mb-2">
-                    {availableFormats.length > 0 ? 'Select Format' : 'Audio Quality'}
-                </label>
-                <select
-                    value={quality}
-                    onChange={(e) => setQuality(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:outline-none focus:border-pink-500/50 transition-all appearance-none cursor-pointer"
-                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center', backgroundSize: '16px' }}
-                >
-                    {(availableFormats.length > 0 ? availableFormats : defaultQualityOptions).map(opt => (
-                        <option key={opt.value} value={opt.value} className="bg-gray-900">
-                            {opt.label}
-                        </option>
-                    ))}
-                </select>
-            </div>
-            <div className="flex items-end">
-                <button
-                    onClick={handleDownload}
-                    className="btn-primary px-8 py-3 flex items-center gap-2 w-full sm:w-auto justify-center"
-                >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                    Download Audio
-                </button>
-            </div>
-        </div>
-    );
 
     return (
-        <div className="flex-1 overflow-y-auto p-8">
-            <div className="max-w-2xl mx-auto">
-                <div className="text-center mb-10 animate-fade-in">
-                    <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-red-500/20 to-pink-600/20 mb-6">
-                        <svg className="w-10 h-10 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+        <div className="flex flex-col h-full bg-[#0f0f13] text-white p-8 overflow-y-auto">
+            <div className="max-w-4xl mx-auto w-full">
+
+                {/* Header Section with Icon */}
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-900/20">
+                        <svg className="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z" />
                         </svg>
                     </div>
-                    <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-red-500 to-pink-500 bg-clip-text text-transparent">
+                    <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-red-500 to-pink-600">
                         YouTube to Audio
                     </h1>
-                    <p className="text-white/50">Download high-quality audio from any YouTube video</p>
+                    <p className="text-gray-400 mt-2">Queue high-quality downloads from any YouTube video</p>
                 </div>
 
-                <div className="glass rounded-2xl p-6 mb-6 animate-slide-up">
-                    <div className="relative">
-                        <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-                            <svg className="w-5 h-5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
+                {/* Input Card */}
+                <div className="bg-[#18181b] border border-white/5 rounded-2xl p-6 mb-8 shadow-xl">
+                    <div className="flex flex-col gap-4">
+                        <div className="flex gap-2">
+                            <div className="flex-1 relative group">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400 group-focus-within:text-pink-500 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                    </svg>
+                                </div>
+                                <input
+                                    type="text"
+                                    value={url}
+                                    onChange={handleUrlChange}
+                                    placeholder="Paste YouTube link here..."
+                                    className="block w-full pl-10 pr-3 py-3 border border-white/10 rounded-xl leading-5 bg-black/20 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500 transition-all"
+                                    onKeyDown={(e) => e.key === 'Enter' && handleDownload()}
+                                />
+                            </div>
+                            <select
+                                value={quality}
+                                onChange={(e) => setQuality(e.target.value)}
+                                className="bg-[#27272a] border border-white/10 text-white rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all appearance-none cursor-pointer hover:bg-[#3f3f46]"
+                            >
+                                {(availableFormats.length > 0 ? availableFormats : defaultQualityOptions).map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
+                            </select>
                         </div>
-                        <input
-                            type="text"
-                            value={url}
-                            onChange={handleUrlChange}
-                            placeholder="Paste YouTube URL here..."
-                            className="w-full bg-white/5 border border-white/10 rounded-xl py-4 pl-12 pr-4 text-white placeholder-white/30 focus:outline-none focus:border-pink-500/50 focus:ring-2 focus:ring-pink-500/20 transition-all"
-                            disabled={downloading}
-                        />
-                        {loading && (
-                            <div className="absolute inset-y-0 right-4 flex items-center">
-                                <div className="w-5 h-5 rounded-full border-2 border-pink-500/30 border-t-pink-500 animate-spin" />
+
+                        {/* Valid URL Preview */}
+                        {preview && (
+                            <div className="flex gap-4 bg-white/5 p-3 rounded-xl animate-fade-in border border-white/5">
+                                <img
+                                    src={preview.thumbnail}
+                                    className="w-24 h-16 object-cover rounded-lg shadow-sm"
+                                    alt="Thumbnail"
+                                />
+                                <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                    <h3 className="font-medium text-white truncate" title={preview.title}>{preview.title}</h3>
+                                    <p className="text-sm text-gray-400 truncate">{preview.channel} • {preview.duration_string}</p>
+                                </div>
+                                <div className="flex items-center">
+                                    <button
+                                        onClick={handleDownload}
+                                        className="bg-white text-black hover:bg-gray-200 px-6 py-2 rounded-full font-medium transition-transform transform active:scale-95 flex items-center gap-2 shadow-lg shadow-white/10"
+                                    >
+                                        <span>Queue</span>
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {error && (
+                            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-xl flex items-center gap-2 text-sm">
+                                <svg className="w-5 h-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                {error}
                             </div>
                         )}
                     </div>
+                </div>
 
-                    {error && (
-                        <p className="mt-3 text-red-400 text-sm flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {error}
-                        </p>
+                {/* Queue / History Section */}
+                <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-xl font-bold flex items-center gap-2">
+                        <span className="w-2 h-8 bg-pink-500 rounded-full inline-block"></span>
+                        Download Queue
+                        {tasks.some(t => !['completed', 'failed'].includes(t.status)) && (
+                            <span className="text-xs bg-pink-500/20 text-pink-400 px-2 py-1 rounded-full animate-pulse">Processing</span>
+                        )}
+                    </h2>
+                    {tasks.length > 0 && (
+                        <button
+                            onClick={handleClearHistory}
+                            className="text-xs text-white/50 hover:text-white transition"
+                        >
+                            Clear History
+                        </button>
                     )}
                 </div>
 
-                {preview && !downloading && (
-                    <div className="glass rounded-2xl overflow-hidden mb-6 animate-slide-up" style={{ animationDelay: '0.1s' }}>
-                        <div className="flex gap-4 p-4">
-                            <div className="relative w-40 h-24 rounded-xl overflow-hidden flex-shrink-0">
-                                {preview.thumbnail ? (
-                                    <img src={preview.thumbnail} alt={preview.title} className="w-full h-full object-cover" />
+                <div className="space-y-3">
+                    {tasks.length === 0 ? (
+                        <div className="text-center py-12 border-2 border-dashed border-white/5 rounded-2xl">
+                            <svg className="w-12 h-12 text-white/10 mx-auto mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                            <p className="text-gray-500">Your download queue is empty</p>
+                        </div>
+                    ) : (
+                        tasks.map((task) => (
+                            <div key={task.task_id} className="bg-[#18181b] border border-white/5 p-4 rounded-xl flex items-center gap-4 group hover:border-white/10 transition-colors">
+                                {/* Thumbnail or Icon */}
+                                {task.thumbnail ? (
+                                    <img src={task.thumbnail} className="w-16 h-16 object-cover rounded-lg bg-black/50" alt="" />
                                 ) : (
-                                    <div className="w-full h-full bg-white/10 flex items-center justify-center">
-                                        <svg className="w-8 h-8 text-white/20" fill="currentColor" viewBox="0 0 24 24">
-                                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                                        </svg>
+                                    <div className="w-16 h-16 bg-white/5 rounded-lg flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
                                     </div>
                                 )}
-                                <div className="absolute bottom-1 right-1 bg-black/80 px-1.5 py-0.5 rounded text-xs">
-                                    {formatDuration(preview.duration)}
-                                </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-lg truncate mb-1">{preview.title}</h3>
-                                <p className="text-white/50 text-sm truncate">{preview.artist || preview.channel}</p>
-                                {preview.view_count && (
-                                    <p className="text-white/30 text-xs mt-2">
-                                        {(preview.view_count / 1000000).toFixed(1)}M views
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                )}
 
-                {preview && !downloading && renderQualitySelector()}
-
-                {downloading && status && (
-                    <div className="glass rounded-2xl p-6 mb-6 animate-slide-up">
-                        <div className="flex items-center gap-4 mb-4">
-                            {preview?.thumbnail && (
-                                <img src={preview.thumbnail} alt="" className="w-16 h-16 rounded-lg object-cover" />
-                            )}
-                            <div className="flex-1 min-w-0">
-                                <p className="font-semibold truncate">{status.title || preview?.title || 'Downloading...'}</p>
-                                <p className="text-sm text-white/50">{status.artist || preview?.artist || ''}</p>
-                            </div>
-                        </div>
-
-                        <div className="relative h-2 bg-white/10 rounded-full overflow-hidden mb-3">
-                            <div
-                                className={`absolute inset-y-0 left-0 rounded-full transition-all duration-300 ${status.status === 'completed' ? 'bg-green-500' : status.status === 'failed' ? 'bg-red-500' : 'bg-gradient-to-r from-pink-500 to-purple-500'}`}
-                                style={{ width: `${status.progress || 0}%` }}
-                            />
-                            {status.status !== 'completed' && status.status !== 'failed' && (
-                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-                            )}
-                        </div>
-
-                        <div className="flex justify-between items-center text-sm">
-                            <span className={getStatusColor(status.status)}>{getStatusText(status.status)}</span>
-                            <span className="text-white/50">{Math.round(status.progress || 0)}%</span>
-                        </div>
-
-                        {status.status === 'completed' && (
-                            <div className="mt-4 text-center">
-                                <p className="text-green-400 flex items-center justify-center gap-2">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    Added to your library!
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <div className="glass rounded-2xl p-6 animate-slide-up" style={{ animationDelay: '0.25s' }}>
-                    <div className="flex justify-between items-center mb-4">
-                        <button
-                            onClick={() => { setShowHistory(!showHistory); if (!showHistory) loadTasks(); }}
-                            className="flex items-center gap-2 text-white/70 hover:text-white transition"
-                        >
-                            <svg className={`w-4 h-4 transition-transform ${showHistory ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                            <span className="font-medium">Download History</span>
-                            {taskPagination.total > 0 && (
-                                <span className="text-xs bg-white/10 px-2 py-0.5 rounded-full">{taskPagination.total}</span>
-                            )}
-                        </button>
-
-                        {showHistory && tasks.length > 0 && (
-                            <button
-                                onClick={handleClearAll}
-                                className="text-sm text-red-400 hover:text-red-300 transition flex items-center gap-1"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                Clear All
-                            </button>
-                        )}
-                    </div>
-
-                    {showHistory && (
-                        <>
-                            {loadingTasks ? (
-                                <div className="flex justify-center py-8">
-                                    <div className="w-8 h-8 rounded-full border-2 border-pink-500/30 border-t-pink-500 animate-spin" />
-                                </div>
-                            ) : tasks.length === 0 ? (
-                                <div className="text-center py-8 text-white/30">
-                                    <p>No download history yet</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {tasks.map((task) => (
-                                        <div key={task.task_id} className="flex items-center gap-3 p-3 rounded-xl bg-white/5 group">
-                                            {task.thumbnail && (
-                                                <img src={task.thumbnail} alt="" className="w-12 h-12 rounded-lg object-cover flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-start mb-1">
+                                        <h4 className="font-medium text-white truncate pr-4" title={task.title || task.url}>{task.title || task.url}</h4>
+                                        <div className="flex items-center gap-2">
+                                            {['completed'].includes(task.status) && (
+                                                <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded">Done</span>
                                             )}
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-medium text-sm truncate">{task.title || 'Unknown'}</p>
-                                                <p className="text-xs text-white/40 truncate">{task.artist || ''}</p>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-xs ${getStatusColor(task.status)}`}>{getStatusText(task.status)}</span>
-                                                <button
-                                                    onClick={() => handleDeleteTask(task.task_id)}
-                                                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 rounded transition"
-                                                >
-                                                    <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
-                                            </div>
+                                            {['failed'].includes(task.status) && (
+                                                <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">Failed</span>
+                                            )}
+                                            <button onClick={(e) => handleDeleteTask(task.task_id, e)} className="text-white/20 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
                                         </div>
-                                    ))}
+                                    </div>
 
-                                    {taskPagination.pages > 1 && (
-                                        <div className="flex justify-center items-center gap-2 pt-4">
-                                            <button
-                                                onClick={() => loadTasks(taskPagination.page - 1)}
-                                                disabled={taskPagination.page <= 1}
-                                                className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
-                                            >
-                                                ←
-                                            </button>
-                                            <span className="text-sm text-white/50">{taskPagination.page} / {taskPagination.pages}</span>
-                                            <button
-                                                onClick={() => loadTasks(taskPagination.page + 1)}
-                                                disabled={taskPagination.page >= taskPagination.pages}
-                                                className="px-3 py-1 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed transition"
-                                            >
-                                                →
-                                            </button>
+                                    {/* Progress Bar or Status Text */}
+                                    {['completed', 'failed', 'cancelled'].includes(task.status) ? (
+                                        <p className="text-xs text-gray-500">
+                                            {task.status === 'completed' ? `Added to library • ${task.duration || '0:00'}` : (task.error || 'Check logs for details')}
+                                        </p>
+                                    ) : (
+                                        <div className="w-full">
+                                            <div className="flex justify-between text-xs text-gray-400 mb-1">
+                                                <span>{task.status === 'downloading' ? 'Downloading...' : 'Processing...'}</span>
+                                                <span>{Math.round(task.progress)}%</span>
+                                            </div>
+                                            <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
+                                                <div
+                                                    className={`h-full ${getStatusColor(task.status)} transition-all duration-300`}
+                                                    style={{ width: `${task.progress}%` }}
+                                                >
+                                                    <div className="w-full h-full bg-white/20 animate-pulse"></div>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                            )}
-                        </>
+                            </div>
+                        ))
                     )}
                 </div>
-
-                <style>{`
-                    @keyframes shimmer {
-                        0% { transform: translateX(-100%); }
-                        100% { transform: translateX(100%); }
-                    }
-                    .animate-shimmer {
-                        animation: shimmer 1.5s infinite;
-                    }
-                `}</style>
             </div>
         </div>
     );

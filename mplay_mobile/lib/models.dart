@@ -33,19 +33,28 @@ class Song {
     fileName.toLowerCase().endsWith('.webm');
 
   factory Song.fromJson(Map<String, dynamic> json) {
+    // Robust video detection: check flag OR existence of video ID
+    final bool hasVideo = json['has_video'] == true || json['video_telegram_id'] != null;
+    
+    // Determine media type: prefer explicit video if hasVideo is true
+    String? mediaType = json['media_type'];
+    if (hasVideo && (mediaType == null || mediaType == 'audio')) {
+       mediaType = 'video';
+    }
+
     return Song(
       id: json['id'] ?? '',
       title: json['title'] ?? 'Unknown Title',
       artist: json['artist'] ?? 'Unknown Artist',
       album: json['album'] ?? '',
       duration: (json['duration'] ?? 0).toDouble(),
-      coverArt: json['cover_art'],
+      coverArt: json['cover_art'] ?? json['thumbnail'], // Fallback to thumbnail for YouTube songs
       thumbnail: json['thumbnail'],
       fileName: json['file_name'] ?? '',
-      mediaType: json['media_type'],
+      mediaType: mediaType,
       audioTelegramId: json['audio_telegram_id'],
       videoTelegramId: json['video_telegram_id'],
-      hasVideo: json['has_video'] ?? false,
+      hasVideo: hasVideo,
     );
   }
 

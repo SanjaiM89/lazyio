@@ -166,9 +166,17 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
+            # Keep connection alive by waiting for messages (even if we ignore them)
+            # This prevents the handler from exiting and closing the socket
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        try:
+            manager.disconnect(websocket)
+        except:
+            pass
 
 # Helper to notify clients
 async def notify_update(event_type: str = "song_added", data: dict = None):
@@ -1133,97 +1141,254 @@ async def process_youtube_download(task_id: str, url: str, quality: str):
         youtube_downloader.cleanup_task(task_id)
 
 
-@app.post("/api/youtube/preview")
-async def youtube_preview(request: YouTubePreviewRequest):
-    """
-    Get video metadata preview before downloading.
-    """
-    if not youtube_downloader.is_youtube_url(request.url):
-        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
-    
-    try:
-        info = await youtube_downloader.get_video_info(request.url)
-        return {
-            "status": "success",
-            "data": info
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/youtube")
-async def youtube_download(request: YouTubeRequest):
+async def youtube_download(background_tasks: BackgroundTasks, request: YouTubeRequest):
     """
-    Start a YouTube audio download task.
+    Start a YouTube audio download task (Using VidsSave Backend).
     Returns task_id(s) for status polling.
     """
-    if not youtube_downloader.is_youtube_url(request.url):
+    if not vidssave_downloader.is_youtube_url(request.url):
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
     
-    # Validate quality
-    # Validate quality
-    valid_qualities = ["320", "256", "192", "128", "m4a", "best", "2160p", "1440p", "1080p", "720p", "480p", "360p"]
-    quality = request.quality if request.quality in valid_qualities else "320"
+    # Reuse the VidsSave download logic
+    return await vidssave_download(background_tasks, request)
+
+
+@app.post("/api/youtube/preview")
+async def youtube_preview(request: YouTubePreviewRequest):
+    """
+    Get video metadata preview before downloading (Using VidsSave Backend).
+    """
+    if not vidssave_downloader.is_youtube_url(request.url):
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
     
-    # Check for playlist or single video and extract info
     try:
-        videos = await youtube_downloader.extract_playlist_info(request.url)
+        info = await vidssave_downloader.get_video_info(request.url)
+        return {
+            "status": "success",
+            "data": {
+                "title": info["title"],
+                "artist": info["artist"],
+                "thumbnail": info["thumbnail"],
+                "duration": info["duration"],
+                "id": "vidssave_backend" # Placeholder
+            }
+        }
     except Exception as e:
-        print(f"Error extracting info: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to extract info: {str(e)}")
-    
-    if not videos:
-        raise HTTPException(status_code=400, detail="No videos found at URL")
+        print(f"[VidsSave] Preview error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-    import uuid
-    from youtube_downloader import DownloadTask, _download_tasks
 
-    created_tasks = []
-    
-    for video in videos:
-        task_id = str(uuid.uuid4())
-        
-        task = DownloadTask(
-            task_id=task_id,
-            url=video['url'],
-            quality=quality,
-            status=DownloadStatus.PENDING,
-            title=video.get('title', ''),
-            song_id=video.get('id')
-        )
-        _download_tasks[task_id] = task
-        
-        # Save initial task to DB
-        await sync_task_to_db(task_id)
-        
-        # Start background download using asyncio.create_task
-        asyncio.create_task(process_youtube_download(task_id, video['url'], quality))
-        
-        created_tasks.append({
-            "task_id": task_id, 
-            "title": video.get('title', 'Unknown'),
-            "status": "queued"
-        })
-    
-    return {
-        "status": "queued",
-        "count": len(created_tasks),
-        "tasks": created_tasks,
-        "task_id": created_tasks[0]["task_id"] if created_tasks else None
-    }
+
+
     
 
 
 
 @app.post("/api/youtube/formats")
 async def get_youtube_formats_endpoint(request: YouTubePreviewRequest):
-    """Get available audio formats for a YouTube video"""
+    """Get available audio formats for a YouTube video (Using VidsSave Backend)"""
     try:
-        formats = await youtube_downloader.get_formats(request.url)
+        formats = await vidssave_downloader.get_formats(request.url)
         return {"status": "success", "formats": formats}
     except Exception as e:
-        print(f"[YT] Format fetch error: {e}")
+        print(f"[VidsSave] Format fetch error: {e}")
+        # raise HTTPException(status_code=400, detail=str(e))
+        return {"status": "success", "formats": []}
+
+@app.post("/api/youtube/preview")
+async def youtube_preview(request: YouTubePreviewRequest):
+    """Get video preview info using yt-dlp (Rich Metadata)"""
+    try:
+        info = await youtube_downloader.get_video_info(request.url)
+        return {
+            "status": "success",
+            "title": info["title"],
+            "artist": info["artist"],
+            "thumbnail": info["thumbnail"],
+            "duration": info["duration"],
+            "description": info.get("description", ""),
+            "channel": info.get("channel", "")
+        }
+    except Exception as e:
+        print(f"[YouTube] Preview error: {e}")
+        # Fallback to VidsSave if yt-dlp fails
+        try:
+            print("[YouTube] Falling back to VidsSave for metadata...")
+            info = await vidssave_downloader.get_video_info(request.url)
+            return {
+                "status": "success",
+                "title": info["title"],
+                "artist": info["artist"],
+                "thumbnail": info["thumbnail"],
+                "duration": info["duration"]
+            }
+        except Exception as ve:
+            raise HTTPException(status_code=400, detail=f"Metadata fetch failed: {str(e)} -> {str(ve)}")
+
+
+# ==================== VidsSave YouTube Download API (Alternative) ====================
+from vidssave_downloader import vidssave_downloader, get_vidssave_task, VidsSaveDownloadStatus
+
+@app.post("/api/vidssave/preview")
+async def vidssave_preview(request: YouTubePreviewRequest):
+    """Get video preview info using VidsSave API"""
+    try:
+        info = await vidssave_downloader.get_video_info(request.url)
+        return {
+            "status": "success",
+            "title": info["title"],
+            "artist": info["artist"],
+            "thumbnail": info["thumbnail"],
+            "duration": info["duration"]
+        }
+    except Exception as e:
+        print(f"[VidsSave] Preview error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/vidssave/formats")
+async def vidssave_formats(request: YouTubePreviewRequest):
+    """Get available formats from VidsSave"""
+    try:
+        formats = await vidssave_downloader.get_formats(request.url)
+        return {"status": "success", "formats": formats}
+    except Exception as e:
+        print(f"[VidsSave] Format fetch error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/vidssave/download")
+async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeRequest):
+    """
+    Start a download using VidsSave backend.
+    Downloads highest quality video and converts to audio.
+    """
+    import uuid
+    task_id = str(uuid.uuid4())
+    
+    async def process_vidssave_download(task_id: str, url: str):
+        """Background task to handle VidsSave download"""
+        try:
+            # Step 0: Fetch Rich Metadata (Title, Artist, Thumbnail) using yt-dlp logic
+            # We do this first to ensure we have good metadata even if VidsSave's is poor
+            from youtube_downloader import youtube_downloader
+            rich_metadata = {}
+            try:
+                print(f"[VidsSave] Fetching rich metadata for {url}")
+                rich_metadata = await youtube_downloader.get_video_info(url)
+            except Exception as e:
+                print(f"[VidsSave] Rich metadata fetch failed, using VidsSave fallback: {e}")
+
+            # Notify start
+            await notify_update("youtube_progress", {
+                "task_id": task_id,
+                "status": "downloading",
+                "progress": 10,
+                "message": "Downloading from VidsSave..."
+            })
+
+            task = await vidssave_downloader.download_and_convert(
+                url=url,
+                task_id=task_id,
+                broadcast_callback=notify_update
+            )
+            
+            if task.status == VidsSaveDownloadStatus.COMPLETE and task.file_path:
+                # Merge metadata: Prefer rich_metadata, fallback to task (VidsSave)
+                final_title = rich_metadata.get("title") or task.title
+                final_artist = rich_metadata.get("artist") or task.artist
+                final_thumbnail = rich_metadata.get("thumbnail") or task.thumbnail
+                final_duration = rich_metadata.get("duration") or task.duration
+
+                # Upload to Telegram
+                await notify_update("youtube_progress", {
+                    "task_id": task_id,
+                    "status": "uploading_to_telegram",
+                    "progress": 85,
+                    "message": "Uploading to Telegram..."
+                })
+                
+                tg_msg = await tg_client.upload_file(
+                    task.file_path,
+                    title=final_title,
+                    artist=final_artist,
+                    duration=final_duration,
+                    thumbnail=final_thumbnail
+                )
+                if tg_msg:
+                    # Save to database
+                    from database import add_song, update_song_video
+                    
+                    # CAPTURE THE SONG ID!
+                    song_id = await add_song(
+                        telegram_file_id=str(tg_msg.id),
+                        audio_telegram_id=str(tg_msg.id),
+                        title=final_title,
+                        artist=final_artist,
+                        duration=final_duration,
+                        thumbnail=final_thumbnail,
+                        file_name=os.path.basename(task.file_path),
+                        file_size=os.path.getsize(task.file_path) if task.file_path else 0
+                    )
+
+                    # Update song with video if available
+                    if task.video_path and os.path.exists(task.video_path):
+                        await notify_update("youtube_progress", {
+                            "task_id": task_id,
+                            "status": "uploading_video",
+                            "progress": 90,
+                            "message": "Uploading video to Telegram..."
+                        })
+                        
+                        video_msg = await tg_client.upload_file(
+                            task.video_path,
+                            title=final_title,
+                            artist=final_artist,
+                            duration=final_duration,
+                            thumbnail=final_thumbnail
+                        )
+                        if video_msg:
+                            # Use the captured song_id
+                            await update_song_video(song_id, str(video_msg.id))
+                    
+                    await notify_update("youtube_progress", {
+                        "task_id": task_id,
+                        "status": "complete",
+                        "progress": 100,
+                        "message": "Added to library!"
+                    })
+                    
+                    # Cleanup
+                    if os.path.exists(task.file_path):
+                        os.remove(task.file_path)
+                    if task.video_path and os.path.exists(task.video_path):
+                        os.remove(task.video_path)
+                else:
+                    await notify_update("youtube_progress", {
+                        "task_id": task_id,
+                        "status": "failed",
+                        "error": "Failed to upload to Telegram"
+                    })
+        except Exception as e:
+            print(f"[VidsSave] Background task error: {e}")
+            import traceback
+            traceback.print_exc()
+            await notify_update("youtube_progress", {
+                "task_id": task_id,
+                "status": "failed",
+                "error": str(e)
+            })
+    
+    background_tasks.add_task(process_vidssave_download, task_id, request.url)
+    
+    return {
+        "status": "queued",
+        "task_id": task_id,
+        "message": "Download started using VidsSave backend"
+    }
 
 
 @app.get("/api/youtube/status/{task_id}")
@@ -1232,7 +1397,13 @@ async def youtube_status(task_id: str):
     Get the status of a YouTube download task.
     Checks in-memory first, then falls back to MongoDB.
     """
-    # Check in-memory first (for active downloads)
+    # Check VidsSave tasks first
+    import dataclasses
+    task = get_vidssave_task(task_id)
+    if task:
+        return dataclasses.asdict(task)
+
+    # Check legacy/other tasks
     task = get_task(task_id)
     if task:
         return task.to_dict()
@@ -1246,11 +1417,60 @@ async def youtube_status(task_id: str):
 
 
 @app.get("/api/youtube/tasks")
+@app.get("/api/youtube/tasks")
 async def list_youtube_tasks(page: int = 1, limit: int = 10):
     """
     List all YouTube download tasks with pagination.
+    Merges in-memory VidsSave tasks with persisted DB tasks.
     """
-    return await get_youtube_tasks(page=page, limit=limit)
+    import dataclasses
+    
+    # 1. Get in-memory tasks (VidsSave)
+    # These are the most up-to-date for currently running downloads
+    in_memory_tasks = []
+    try:
+        from vidssave_downloader import get_all_tasks
+        # Convert dataclasses to dicts immediately to avoid type mismatch issues
+        in_memory_tasks = [dataclasses.asdict(t) for t in get_all_tasks()]
+        # Enum to string conversion (for status)
+        for t in in_memory_tasks:
+            if "status" in t and hasattr(t["status"], "value"):
+                t["status"] = t["status"].value
+    except ImportError:
+        pass
+    
+    # 2. Get persisted tasks from DB
+    db_result = await get_youtube_tasks(page=page, limit=limit)
+    db_tasks = db_result.get("tasks", [])
+    
+    # 3. Merge: Active in-memory tasks override DB tasks with same ID
+    # Normalize DB tasks to dicts if they aren't already
+    merged_map = {}
+    for t in db_tasks:
+        t_dict = t if isinstance(t, dict) else t.dict()
+        merged_map[t_dict["task_id"]] = t_dict
+    
+    # Add/Override with in-memory tasks
+    for task in in_memory_tasks:
+        merged_map[task["task_id"]] = task
+        
+    final_tasks = list(merged_map.values())
+    
+    # Sort: put active/pending tasks first, then by date?
+    # For now, simplistic sort: In-memory/active ones usually have 'progress' < 100 or status not 'complete'
+    # But for a stable list, maybe just reverse order (assuming newer tasks are at end or start of map)
+    # The map insertion order is preserved in Python 3.7+
+    
+    # Pagination total might be slightly off if we merged new in-memory tasks not in DB
+    # Recalculate basic total
+    total_count = len(final_tasks) if len(final_tasks) > db_result.get("total", 0) else db_result.get("total", 0)
+
+    return {
+        "tasks": final_tasks,
+        "page": page,
+        "pages": db_result.get("pages", 1),
+        "total": total_count
+    }
 
 
 @app.delete("/api/youtube/tasks")

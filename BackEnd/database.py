@@ -17,13 +17,16 @@ songs_collection = db.get_collection("songs")
 
 def song_helper(song) -> dict:
     file_name = song.get("file_name", "")
-    # Determine media_type from file extension
-    video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
-    media_type = 'video' if any(file_name.lower().endswith(ext) for ext in video_exts) else 'audio'
-    
     # Support new dual-ID schema
     has_video = song.get("has_video", song.get("video_telegram_id") is not None)
     
+    # Determine media_type: prefer explicit video flag, otherwise fallback to extension
+    if has_video:
+        media_type = 'video'
+    else:
+        video_exts = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
+        media_type = 'video' if any(file_name.lower().endswith(ext) for ext in video_exts) else 'audio'
+
     return {
         "id": str(song["_id"]),
         "telegram_file_id": song.get("telegram_file_id"),  # Legacy field
@@ -34,7 +37,7 @@ def song_helper(song) -> dict:
         "artist": song.get("artist"),
         "album": song.get("album"),
         "duration": song.get("duration"),
-        "cover_art": song.get("cover_art"),
+        "cover_art": song.get("cover_art") or song.get("thumbnail"), # Fallback to thumbnail
         "thumbnail": song.get("thumbnail"),  # YouTube thumbnail
         "file_name": file_name,
         "file_size": song.get("file_size"),
@@ -735,3 +738,23 @@ async def init_default_playlists():
         if len(all_songs) >= 5:
             mix = random.sample(all_songs, min(15, len(all_songs)))
             await create_app_playlist("Random Mix", [s["id"] for s in mix], "A bit of everything")
+
+
+async def update_song_video(song_id: str, video_telegram_id: str):
+    """Update a song with video telegram ID"""
+    if not song_id or not video_telegram_id:
+        return False
+    
+    try:
+        result = await songs_collection.update_one(
+            {"_id": ObjectId(song_id)},
+            {"$set": {
+                "video_telegram_id": video_telegram_id,
+                "has_video": True,
+                "media_type": "video"
+            }}
+        )
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"Error updating song video: {e}")
+        return False

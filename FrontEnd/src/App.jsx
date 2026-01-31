@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getSongs, recordPlay, getWsUrl, getHomepage } from './api';
+import { getSongs, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
 import Player from './Player';
 import Upload from './Upload';
 import YouTube from './YouTube';
@@ -232,9 +232,20 @@ function App() {
                       </div>
 
                       {/* Song Menu - visible on hover */}
-                      <div className="opacity-0 group-hover:opacity-100 transition mr-2" onClick={e => e.stopPropagation()}>
-                        <SongMenu song={song} onAddToPlaylist={handleAddToPlaylist} />
-                      </div>
+                      {/* Song Menu - visible on hover */}
+                      <SongMenu
+                        className="opacity-0 group-hover:opacity-100 transition mr-2"
+                        song={song}
+                        onAddToPlaylist={handleAddToPlaylist}
+                        onDelete={async (s) => {
+                          try {
+                            await deleteSong(s.id);
+                            loadSongs(); // Refresh list via App's loadSongs
+                          } catch (err) {
+                            console.error("Failed to delete song:", err);
+                          }
+                        }}
+                      />
 
                       <span className="text-sm text-white/40">{song.album || ""}</span>
                       <span className="text-sm text-white/40 w-16 text-right">

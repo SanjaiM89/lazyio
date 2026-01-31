@@ -142,7 +142,15 @@ class TelegramClientWrapper:
             filename = name[:195] + ext
         return filename
 
-    async def upload_file(self, file_path: str, progress_callback=None) -> Optional[Any]:
+    async def upload_file(
+        self, 
+        file_path: str, 
+        progress_callback=None,
+        title: str = None,
+        artist: str = None,
+        duration: int = 0,
+        thumbnail: str = None
+    ) -> Optional[Any]:
         if not os.path.exists(file_path):
             return None
 
@@ -156,10 +164,53 @@ class TelegramClientWrapper:
                 speed = current / elapsed if elapsed > 0 else 0
                 progress_callback(current, total, speed)
 
+        # Download thumbnail if URL provided
+        thumb_path = None
+        if thumbnail and (thumbnail.startswith("http://") or thumbnail.startswith("https://")):
+            try:
+                import urllib.request
+                import uuid
+                thumb_name = f"thumb_{uuid.uuid4()}.jpg"
+                thumb_path = os.path.join(os.path.dirname(file_path), thumb_name)
+                
+                def _d_thumb():
+                    with urllib.request.urlopen(thumbnail, timeout=10) as response:
+                        with open(thumb_path, 'wb') as f:
+                            f.write(response.read())
+                
+                await asyncio.get_event_loop().run_in_executor(None, _d_thumb)
+            except Exception as e:
+                print(f"[TG] Failed to download thumbnail: {e}")
+                thumb_path = None
+        elif thumbnail and os.path.exists(thumbnail):
+            thumb_path = thumbnail
+
         try:
             print(f"[TG] Uploading {clean_name}...")
             
             attributes = []
+            
+            # Add MIME-specific attributes
+            mime_type, _ = mimetypes.guess_type(file_path)
+            is_video = mime_type and mime_type.startswith('video')
+            is_audio = mime_type and mime_type.startswith('audio')
+            
+            if is_video:
+                from telethon.tl.types import DocumentAttributeVideo
+                attributes.append(DocumentAttributeVideo(
+                    duration=duration or 0,
+                    w=0, h=0, # Unknown dimensions
+                    supports_streaming=True
+                ))
+            elif is_audio:
+                from telethon.tl.types import DocumentAttributeAudio
+                attributes.append(DocumentAttributeAudio(
+                    duration=duration or 0,
+                    title=title,
+                    performer=artist
+                ))
+            
+            # Always add filename attribute as backup
             if clean_name != os.path.basename(file_path):
                 attributes.append(DocumentAttributeFilename(file_name=clean_name))
             
@@ -170,14 +221,22 @@ class TelegramClientWrapper:
                 caption=f"Uploaded via mPlay: {clean_name}",
                 progress_callback=_progress if progress_callback else None,
                 attributes=attributes,
-                force_document=False,
-                supports_streaming=True  # Important for video seeking
+                thumb=thumb_path,
+                force_document=False, # Let Telethon decide (Audio/Video vs Document)
+                supports_streaming=True
             )
             print(f"[TG] Upload complete! Msg ID: {msg.id}")
             return msg
         except Exception as e:
             print(f"[TG] Upload failed: {e}")
             return None
+        finally:
+            # Cleanup temp thumbnail
+            if thumb_path and thumbnail.startswith("http") and os.path.exists(thumb_path):
+                try:
+                    os.remove(thumb_path)
+                except:
+                    pass
 
     async def get_file_info(self, message_id: int) -> Dict[str, Any]:
         """Fetch metadata, rotating through workers to avoid FloodWait."""
