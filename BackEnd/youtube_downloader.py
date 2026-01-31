@@ -111,6 +111,20 @@ class YouTubeDownloader:
         self._cancelled_tasks: set = set()
         # Limit concurrent downloads to 3 to avoid YouTube rate limits/bot detection
         self.semaphore = asyncio.Semaphore(3)
+        
+        # DEBUG: Verify JS Runtimes
+        import shutil
+        import yt_dlp
+        print(f"[YT] yt-dlp version: {yt_dlp.version.__version__}")
+        
+        try:
+            import quickjs
+            print(f"[YT] Python 'quickjs' module: AVAILABLE ({quickjs.__file__})")
+        except ImportError:
+            print("[YT] Python 'quickjs' module: NOT FOUND")
+            
+        print(f"[YT] 'quickjs' binary check: {shutil.which('quickjs')}")
+        print(f"[YT] 'node' binary check: {shutil.which('node')}")
     
     @classmethod
     def is_youtube_url(cls, url: str) -> bool:
@@ -465,11 +479,9 @@ class YouTubeDownloader:
                     "Accept-Language": "en-US,en;q=0.9",
                 },
                 # New: Try alternative clients to bypass SABR/format issues
-                "extractor_args": {
-                    "youtube": {
-                        "player_client": ["tv_embedded", "ios_embedded", "android_embedded"]
-                    }
-                },
+                # New: Try alternative clients to bypass SABR/format issues
+                # Extractor args removed to allow default client fallback (android_vr -> ios -> web)
+
             }
             
             # Use cookies file if it exists (for deployed servers)
