@@ -46,8 +46,15 @@ export const getRecommendations = async (currentSongId, historyIds) => {
     return response.data;
 };
 
+export const getSimilarSongs = async (songId, limit = 10) => {
+    const response = await api.get(`/recommend/similar/${songId}`, { params: { limit } });
+    return response.data;
+};
+
+
 // Helper for streaming URL
-export const getStreamUrl = (songId) => `${API_BASE_URL}/stream/${songId}`;
+export const getStreamUrl = (songId, quality = 'original') => `${API_BASE_URL}/stream/${songId}?quality=${quality}`;
+
 
 // ==================== YouTube API ====================
 

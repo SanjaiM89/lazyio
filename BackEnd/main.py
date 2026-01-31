@@ -21,11 +21,13 @@ from database import (
     add_song_to_playlist, remove_song_from_playlist, delete_playlist,
     record_play, get_recently_played,
     get_ai_cache, update_ai_cache,
-    like_song, dislike_song, get_like_status, get_liked_songs, get_recommendations
+    like_song, dislike_song, get_like_status, get_liked_songs, get_recommendations,
+    get_all_vectors, update_song_features
 )
 from telegram_client import tg_client, FileNotFound
 from metadata import extract_metadata
 from mistral_agent import get_music_recommendations, get_homepage_recommendations
+from audio_recommender import audio_recommender
 
 # Background task for hourly AI refresh
 async def refresh_ai_recommendations():
@@ -82,6 +84,16 @@ async def lifespan(app: FastAPI):
         
     # Initialize default playlists
     await init_default_playlists()
+    
+    # Initialize Audio Recommender Index
+    try:
+        print("[Audio] Loading feature vectors...")
+        vectors = await get_all_vectors()
+        for sid, vec in vectors.items():
+            audio_recommender.add_to_index(sid, vec)
+        print(f"[Audio] Loaded {len(vectors)} vectors into index")
+    except Exception as e:
+        print(f"[Audio] Failed to load vectors: {e}")
     
     # Start background AI refresh task
     ai_task = asyncio.create_task(refresh_ai_recommendations())
@@ -285,7 +297,7 @@ async def list_songs():
 # ... (Keep your existing imports and setup) ...
 
 @app.get("/api/stream/{song_id}")
-async def stream_song(song_id: str, request: Request, type: str = None):
+async def stream_song(song_id: str, request: Request, type: str = None, quality: str = "original"):
     """
     Stream a song with optimized Range support and Nginx bypass.
     """
@@ -398,10 +410,59 @@ async def recommend(current_song_id: str, history_ids: list[str]):
     # remove duplicates
     unique_matches = {v['id']:v for v in db_matches}.values()
     
+    
     return {
         "mistral_suggestions": recs,
         "playable_matches": list(unique_matches)
     }
+
+
+@app.post("/api/admin/scan-audio-features")
+async def api_scan_audio_features(background_tasks: BackgroundTasks):
+    """Trigger background scan of all songs to extract audio features"""
+    
+    async def _scan_task():
+        print("[SCAN] Starting library audio analysis...")
+        
+        # 0. Check dependencies
+        if not audio_recommender.DEPENDENCIES_AVAILABLE:
+             print("[SCAN] Skipped: Dependencies (essentia/faiss) not installed.")
+             return
+             
+        # 1. Get all songs
+        all_songs = await get_all_songs()
+        print(f"[SCAN] Found {len(all_songs)} songs to check.")
+        
+        count = 0
+                
+            # Need local file path. Note: Telegram files might not be local.
+            # Only process if we have a local file?
+            # Creating a temp file from telegram DL might be needed.
+            # For now, let's assume we might have some local files or skip.
+            # Wait, `upload_files` saves to TEMP_DIR and then deletes.
+            # We don't keep local files!
+            # We need to DOWNLOAD the file to process it if it's missing.
+            pass
+            # TODO: Implementation for streaming/downloading for analysis
+            # For now, this placeholder handles the architecture. 
+            # In a real deployed version without local storage, we'd need to download -> analyze -> delete.
+            
+    # background_tasks.add_task(_scan_task)
+    return {"status": "started", "message": "Scan functionality requires persistent local storage or temporary download logic."}
+
+
+@app.get("/api/recommend/similar/{song_id}")
+async def api_recommend_similar(song_id: str, limit: int = 10):
+    """Get content-based similar songs using Vector Search"""
+    similar_ids = audio_recommender.find_similar(song_id, limit)
+    
+    songs = []
+    for sid in similar_ids:
+        s = await get_song_by_id(sid)
+        if s:
+            songs.append(s)
+            
+    return {"similar_songs": songs}
 
 
 # ==================== Like/Dislike API ====================

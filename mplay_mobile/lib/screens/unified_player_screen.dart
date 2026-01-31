@@ -1067,7 +1067,18 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
                 ],
               ),
             ),
+                ],
+              ),
+            ),
             const Divider(color: Colors.white10),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome, color: Colors.purpleAccent),
+              title: const Text("Find Similar Songs", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showSimilarSongsSheet();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.playlist_add, color: Colors.white),
               title: const Text("Add to Playlist", style: TextStyle(color: Colors.white)),
@@ -1278,4 +1289,77 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
       ),
     );
   }
+
+  void _showSimilarSongsSheet() async {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1a1a2e),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (_, controller) {
+           return FutureBuilder<List<Song>>(
+             future: ApiService.getSimilarSongs(widget.song.id),
+             builder: (context, snapshot) {
+               if (snapshot.connectionState == ConnectionState.waiting) {
+                 return const Center(child: CircularProgressIndicator());
+               }
+               if (snapshot.hasError) {
+                 return Center(child: Text("Error: ${snapshot.error}", style: const TextStyle(color: Colors.white)));
+               }
+               final songs = snapshot.data ?? [];
+               if (songs.isEmpty) {
+                 return const Center(child: Text("No similar songs found", style: TextStyle(color: Colors.white54)));
+               }
+               
+               return Column(
+                 children: [
+                   Container(
+                     padding: const EdgeInsets.all(16),
+                     child: Text("Similar to ${widget.song.title}", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                   ),
+                   Expanded(
+                     child: ListView.builder(
+                       controller: controller,
+                       itemCount: songs.length,
+                       itemBuilder: (context, index) {
+                         final s = songs[index];
+                         return ListTile(
+                           leading: ClipRRect(
+                             borderRadius: BorderRadius.circular(4),
+                             child: Image.network(
+                               s.thumbnail ?? s.coverArt ?? "", width: 50, height: 50, fit: BoxFit.cover,
+                               errorBuilder: (_,__,___) => Container(color: Colors.grey, width: 50, height: 50),
+                             ),
+                           ),
+                           title: Text(s.title, style: const TextStyle(color: Colors.white)),
+                           subtitle: Text(s.artist, style: const TextStyle(color: Colors.white54)),
+                           trailing: IconButton(
+                             icon: const Icon(Icons.play_arrow, color: kPrimaryColor),
+                             onPressed: () {
+                               Navigator.pop(ctx);
+                               Provider.of<MusicProvider>(context, listen: false).playSong(s, songs);
+                             },
+                           ),
+                           onTap: () {
+                               Navigator.pop(ctx);
+                               Provider.of<MusicProvider>(context, listen: false).playSong(s, songs);
+                           },
+                         );
+                       },
+                     ),
+                   ),
+                 ],
+               );
+             },
+           );
+        },
+      ),
+    );
+  }
 }
+

@@ -129,11 +129,12 @@ class ApiService {
     await http.delete(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId'));
   }
 
-  static String getStreamUrl(String songId, {String? type}) {
+  static String getStreamUrl(String songId, {String? type, String quality = 'original'}) {
+    String url = '${AppConfig.baseUrl}/api/stream/$songId?quality=$quality';
     if (type != null) {
-      return '${AppConfig.baseUrl}/api/stream/$songId?type=$type';
+      url += '&type=$type';
     }
-    return '${AppConfig.baseUrl}/api/stream/$songId';
+    return url;
   }
 
   // Like/Dislike
@@ -163,6 +164,17 @@ class ApiService {
     }
     return [];
   }
+
+  static Future<List<Song>> getSimilarSongs(String songId, {int limit = 10}) async {
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/recommend/similar/$songId?limit=$limit'));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> songs = data['similar_songs'] ?? [];
+      return songs.map((j) => Song.fromJson(j)).toList();
+    }
+    return [];
+  }
+
 
   /// Get LLM-generated upcoming queue based on current song
   static Future<Map<String, dynamic>> getUpcomingQueue(String songId) async {

@@ -35,6 +35,7 @@ class TelegramClientWrapper:
             raise ValueError("Missing Telegram Config")
         
         # 1. OPTIMIZATION: Multi-Client Pool (IDM Style)
+
         # We spawn multiple clients to open multiple TCP connections.
         self.pool_size = 4  # 4 Workers = ~4x Speed
         self.clients = []
@@ -106,6 +107,20 @@ class TelegramClientWrapper:
         except Exception as e:
             print(f"❌  Could not resolve BIN_CHANNEL: {e}")
             print("   Uploads might fail if the bot hasn't seen the channel yet.")
+
+    async def download_media(self, message_id: int, file_path: str):
+        """Download media to a local file path"""
+        try:
+             # Use worker 0 for simplicity or implement round robin if needed
+             message = await self.client.get_messages(self.bin_channel, ids=message_id)
+             if not message or not message.media:
+                 raise FileNotFound(f"Message {message_id} not found")
+                 
+             await self.client.download_media(message, file_path)
+             return file_path
+        except Exception as e:
+            print(f"[TG] Download failed: {e}")
+            return None
 
     def _sanitize_filename(self, filename: str) -> str:
         import re

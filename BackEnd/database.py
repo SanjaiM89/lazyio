@@ -129,6 +129,24 @@ async def search_songs(query: str):
     return songs
 
 
+
+async def get_all_vectors() -> dict:
+    """Get all song vectors: {song_id: vector}"""
+    vectors = {}
+    async for song in songs_collection.find({"audio_features": {"$exists": True}}):
+        if song.get("audio_features"):
+            vectors[str(song["_id"])] = song["audio_features"]
+    return vectors
+
+
+async def update_song_features(song_id: str, features: list):
+    """Update song with audio features (vector)"""
+    await songs_collection.update_one(
+        {"_id": ObjectId(song_id)},
+        {"$set": {"audio_features": features}}
+    )
+
+
 async def delete_song(song_id: str) -> bool:
     """Delete a song by ID"""
     try:

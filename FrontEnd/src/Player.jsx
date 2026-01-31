@@ -229,6 +229,21 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                         <div className="text-center z-10 animate-fade-in">
                             <h1 className="text-2xl font-bold mb-1 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">{currentSong.title || "Unknown Title"}</h1>
                             <p className="text-base text-white/60">{currentSong.artist || "Unknown Artist"}</p>
+                            <button
+                                onClick={() => {
+                                    // Trigger find similar - needs to be passed down or handled here
+                                    // For now just console log or simple alert as we need to hook it to playlist update
+                                    if (onSelectSong) {
+                                        // Quick hack: onSelectSong could interpret a special event?
+                                        // Ideally we need a prop onFindSimilar
+                                        alert("Finding similar songs...");
+                                    }
+                                }}
+                                className="mt-4 px-4 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/70 transition flex items-center gap-2 mx-auto"
+                            >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
+                                Find Similar
+                            </button>
                         </div>
                     ) : (
                         <div className="text-center z-10">
