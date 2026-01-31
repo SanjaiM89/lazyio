@@ -1195,7 +1195,7 @@ async def youtube_download(request: YouTubeRequest):
 
 
 @app.post("/api/youtube/formats")
-async def get_youtube_formats_endpoint(request: YoutubeURLRequest):
+async def get_youtube_formats_endpoint(request: YouTubePreviewRequest):
     """Get available audio formats for a YouTube video"""
     try:
         formats = await youtube_downloader.get_formats(request.url)

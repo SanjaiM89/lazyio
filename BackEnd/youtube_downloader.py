@@ -129,10 +129,22 @@ class YouTubeDownloader:
 
         print("[YT] Deno not found. Attempting to install...")
         try:
-            # We use the standard install script piped to sh.
-            # This requires curl and sh.
-            install_cmd = "curl -fsSL https://deno.land/install.sh | sh"
-            subprocess.run(install_cmd, shell=True, check=True)
+            # Use urllib to download to avoid curl dependency
+            import urllib.request
+            import tempfile
+            
+            install_script_url = "https://deno.land/install.sh"
+            with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tf:
+                print(f"[YT] Downloading Deno installer from {install_script_url}...")
+                with urllib.request.urlopen(install_script_url) as response:
+                    tf.write(response.read())
+                temp_script_path = tf.name
+
+            print("Running Deno installer...")
+            # Run with sh, inheriting environment
+            subprocess.run(["sh", temp_script_path], check=True, env=os.environ.copy())
+            os.remove(temp_script_path)
+            
             print("[YT] Deno installed successfully.")
         except Exception as e:
             print(f"[YT] Failed to install Deno: {e}")
