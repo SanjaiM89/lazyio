@@ -226,190 +226,180 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         </div>
     );
 
-    // Render Full View
-    if (fullView) {
-        return (
-            <div className="fixed inset-0 z-40 bg-[#0f0f13] flex flex-col pt-20">
-                {/* Background Blur */}
-                <div
-                    className="absolute inset-0 bg-cover bg-center opacity-30 blur-3xl scale-150 pointer-events-none"
-                    style={{ backgroundImage: currentSong?.cover_art ? `url(${currentSong.cover_art})` : 'linear-gradient(135deg, #ec4899, #9333ea)' }}
-                />
+    // Full View Content (rendered conditionally at end)
+    const FullViewContent = (
+        <div className="fixed inset-0 z-40 bg-[#0f0f13] flex flex-col pt-20">
+            {/* Background Blur */}
+            <div
+                className="absolute inset-0 bg-cover bg-center opacity-30 blur-3xl scale-150 pointer-events-none"
+                style={{ backgroundImage: currentSong?.cover_art ? `url(${currentSong.cover_art})` : 'linear-gradient(135deg, #ec4899, #9333ea)' }}
+            />
 
-                <div className="flex-1 flex overflow-hidden relative z-10">
-                    {/* Main Content */}
-                    <div className="flex-1 flex flex-col items-center justify-center p-8">
+            <div className="flex-1 flex overflow-hidden relative z-10">
+                {/* Main Content */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8">
 
-                        {/* Toggle */}
-                        <ModeToggle />
+                    {/* Toggle */}
+                    <ModeToggle />
 
-                        {/* Content */}
-                        {mode === 'video' && hasVideo ? (
-                            <VideoPlayer />
-                        ) : (
-                            <div className={`relative z-10 mb-10 ${isPlaying ? 'animate-spin-slow' : ''}`}>
-                                <div className="w-64 h-64 md:w-80 md:h-80 rounded-full bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center shadow-2xl shadow-pink-500/20 border-4 border-white/10">
-                                    {currentSong?.cover_art ? (
-                                        <img src={currentSong.cover_art} alt="" className="w-full h-full rounded-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full rounded-full bg-gray-800 flex items-center justify-center">
-                                            <svg className="w-24 h-24 text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
-                                        </div>
-                                    )}
-                                </div>
-                                <div className="absolute inset-0 rounded-full border-4 border-white/5 pointer-events-none" />
-                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border-2 border-white/10 pointer-events-none" />
-                            </div>
-                        )}
-
-                        {/* Song Info & Controls (Only if NOT in video mode or if user wants consistency) */}
-                        {/* Note: Video mode has its own overlay controls now. Audio mode uses main controls. */}
-                        {mode === 'audio' && (
-                            <div className="w-full max-w-lg z-10">
-                                <div className="text-center mb-8">
-                                    <h1 className="text-3xl font-bold text-white mb-2">{currentSong?.title || "Unknown Title"}</h1>
-                                    <p className="text-xl text-white/60">{currentSong?.artist || "Unknown Artist"}</p>
-                                </div>
-
-                                {/* Progress */}
-                                <div className="flex items-center gap-4 mb-8 w-full">
-                                    <span className="text-xs text-white/60 w-10 text-right font-mono">{formatTime(progress)}</span>
-                                    <div className="flex-1 h-1.5 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2.5 transition-all duration-300">
-                                        <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-600 rounded-full shadow-[0_0_15px_rgba(236,72,153,0.5)]" style={{ width: `${progressPercent}%` }} />
-                                        <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ left: `${progressPercent}%`, marginLeft: '-8px' }} />
-                                        <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                    {/* Content */}
+                    {mode === 'video' && hasVideo ? (
+                        <VideoPlayer />
+                    ) : (
+                        <div className={`relative z-10 mb-10 ${isPlaying ? 'animate-spin-slow' : ''}`}>
+                            <div className="w-64 h-64 md:w-80 md:h-80 rounded-full bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center shadow-2xl shadow-pink-500/20 border-4 border-white/10">
+                                {currentSong?.cover_art ? (
+                                    <img src={currentSong.cover_art} alt="" className="w-full h-full rounded-full object-cover" />
+                                ) : (
+                                    <div className="w-full h-full rounded-full bg-gray-800 flex items-center justify-center">
+                                        <svg className="w-24 h-24 text-white/20" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" /></svg>
                                     </div>
-                                    <span className="text-xs text-white/60 w-10 font-mono">{formatTime(duration)}</span>
-                                </div>
-
-                                {/* Main Controls */}
-                                <div className="flex items-center justify-center gap-10">
-                                    <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
-                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
-                                    </button>
-                                    <button onClick={togglePlay} className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(255,255,255,0.5)]">
-                                        {isPlaying ? (
-                                            <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                                        ) : (
-                                            <svg className="w-10 h-10 ml-1.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                                        )}
-                                    </button>
-                                    <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
-                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
-                                    </button>
-                                </div>
+                                )}
                             </div>
-                        )}
-                    </div>
-                    {/* Right Playlist Sidebar (Optional in full view) */}
-                    <div className="w-80 glass-dark border-l border-white/5 flex flex-col hidden lg:flex">
-                        <div className="p-6"><h2 className="text-white/60 font-semibold uppercase tracking-wider text-sm">Up Next</h2></div>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                            {playlist.slice(0, 20).map((song, i) => (
-                                <div key={song.id} onClick={() => onSelectSong(song)} className={`p-3 rounded-lg flex items-center gap-3 cursor-pointer hover:bg-white/5 ${currentSong?.id === song.id ? 'bg-white/10' : ''}`}>
-                                    <img src={song.cover_art} className="w-10 h-10 rounded object-cover bg-gray-800" alt="" />
-                                    <div className="min-w-0">
-                                        <p className="truncate text-sm font-medium text-white">{song.title}</p>
-                                        <p className="truncate text-xs text-white/50">{song.artist}</p>
-                                    </div>
-                                </div>
-                            ))}
+                            <div className="absolute inset-0 rounded-full border-4 border-white/5 pointer-events-none" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 rounded-full bg-black/80 border-2 border-white/10 pointer-events-none" />
                         </div>
+                    )}
+
+                    {/* Song Info & Controls (Only if NOT in video mode or if user wants consistency) */}
+                    {/* Note: Video mode has its own overlay controls now. Audio mode uses main controls. */}
+                    {mode === 'audio' && (
+                        <div className="w-full max-w-lg z-10">
+                            <div className="text-center mb-8">
+                                <h1 className="text-3xl font-bold text-white mb-2">{currentSong?.title || "Unknown Title"}</h1>
+                                <p className="text-xl text-white/60">{currentSong?.artist || "Unknown Artist"}</p>
+                            </div>
+
+                            {/* Progress */}
+                            <div className="flex items-center gap-4 mb-8 w-full">
+                                <span className="text-xs text-white/60 w-10 text-right font-mono">{formatTime(progress)}</span>
+                                <div className="flex-1 h-1.5 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2.5 transition-all duration-300">
+                                    <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-600 rounded-full shadow-[0_0_15px_rgba(236,72,153,0.5)]" style={{ width: `${progressPercent}%` }} />
+                                    <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ left: `${progressPercent}%`, marginLeft: '-8px' }} />
+                                    <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                                </div>
+                                <span className="text-xs text-white/60 w-10 font-mono">{formatTime(duration)}</span>
+                            </div>
+
+                            {/* Main Controls */}
+                            <div className="flex items-center justify-center gap-10">
+                                <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
+                                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
+                                </button>
+                                <button onClick={togglePlay} className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(255,255,255,0.5)]">
+                                    {isPlaying ? (
+                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                    ) : (
+                                        <svg className="w-10 h-10 ml-1.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                    )}
+                                </button>
+                                <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
+                                    <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+                {/* Right Playlist Sidebar (Optional in full view) */}
+                <div className="w-80 glass-dark border-l border-white/5 flex flex-col hidden lg:flex">
+                    <div className="p-6"><h2 className="text-white/60 font-semibold uppercase tracking-wider text-sm">Up Next</h2></div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                        {playlist.slice(0, 20).map((song, i) => (
+                            <div key={song.id} onClick={() => onSelectSong(song)} className={`p-3 rounded-lg flex items-center gap-3 cursor-pointer hover:bg-white/5 ${currentSong?.id === song.id ? 'bg-white/10' : ''}`}>
+                                <img src={song.cover_art} className="w-10 h-10 rounded object-cover bg-gray-800" alt="" />
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-white">{song.title}</p>
+                                    <p className="truncate text-xs text-white/50">{song.artist}</p>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </div>
-
-                {/* Persistent Audio - Mutually exclusive with Video */}
-                <audio
-                    ref={audioRef}
-                    src={currentSong ? getStreamUrl(currentSong.id) : undefined}
-                    onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
-                    onEnded={onNext}
-                    onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-                    style={{ display: 'none' }}
-                />
             </div>
-        );
-    }
+        </div>
+    );
 
-    // Mini Bar View
+    // Mini Bar Content
+    const MiniBarContent = (
+        <div className="h-24 glass border-t border-white/10 flex items-center px-4 md:px-8 gap-4 md:gap-8 cursor-pointer hover:bg-white/5 transition group/player" onClick={onToggleView}>
+            {/* Song Info */}
+            <div className="flex items-center gap-4 w-1/3 min-w-0">
+                {currentSong ? (
+                    <>
+                        <div className={`w-14 h-14 rounded-lg bg-gray-800 flex-shrink-0 overflow-hidden relative shadow-lg ${isPlaying ? 'animate-spin-slow' : ''}`}>
+                            <img src={currentSong.cover_art} className="w-full h-full object-cover" alt="" />
+                            {/* Overlay play icon on hover (hint to expand) */}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/player:opacity-100 transition">
+                                <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                            </div>
+                        </div>
+                        <div className="min-w-0">
+                            <p className="font-bold text-white truncate text-base">{currentSong.title}</p>
+                            <p className="text-sm text-white/60 truncate">{currentSong.artist}</p>
+                        </div>
+                    </>
+                ) : (
+                    <p className="text-white/40 text-sm">No song playing</p>
+                )}
+            </div>
+
+            {/* Controls (Center) */}
+            <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-8 mb-2">
+                    <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
+                    </button>
+                    <button onClick={togglePlay} className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg shadow-white/10 hover:shadow-white/20">
+                        {isPlaying ? (
+                            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                        ) : (
+                            <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        )}
+                    </button>
+                    <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
+                        <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
+                    </button>
+                </div>
+                {/* Mini Progress */}
+                <div className="w-full flex items-center gap-3">
+                    <span className="text-xs text-white/40 w-8 text-right font-mono">{formatTime(progress)}</span>
+                    <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2 transition-all duration-300">
+                        <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full" style={{ width: `${progressPercent}%` }} />
+                        <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-md" style={{ left: `${progressPercent}%`, marginLeft: '-6px' }} />
+                        <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                    </div>
+                    <span className="text-xs text-white/40 w-8 font-mono">{formatTime(duration)}</span>
+                </div>
+            </div>
+
+            {/* Volume / Extra */}
+            <div className="hidden md:flex items-center gap-3 w-1/3 justify-end" onClick={e => e.stopPropagation()}>
+                <button className="text-white/60 hover:text-white">
+                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
+                </button>
+                <div className="w-24 h-1 bg-white/10 rounded-full relative group/vol">
+                    <div className="absolute left-0 top-0 h-full bg-white rounded-full group-hover/vol:bg-pink-500 transition-colors" style={{ width: `${volume * 100}%` }} />
+                    <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                </div>
+            </div>
+        </div>
+    );
+
+    // SINGLE return point - audio is ALWAYS in same position for both views
     return (
         <>
-            <>
-                <div className="h-24 glass border-t border-white/10 flex items-center px-4 md:px-8 gap-4 md:gap-8 cursor-pointer hover:bg-white/5 transition group/player" onClick={onToggleView}>
-                    {/* Song Info */}
-                    <div className="flex items-center gap-4 w-1/3 min-w-0">
-                        {currentSong ? (
-                            <>
-                                <div className={`w-14 h-14 rounded-lg bg-gray-800 flex-shrink-0 overflow-hidden relative shadow-lg ${isPlaying ? 'animate-spin-slow' : ''}`}>
-                                    <img src={currentSong.cover_art} className="w-full h-full object-cover" alt="" />
-                                    {/* Overlay play icon on hover (hint to expand) */}
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/player:opacity-100 transition">
-                                        <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                                    </div>
-                                </div>
-                                <div className="min-w-0">
-                                    <p className="font-bold text-white truncate text-base">{currentSong.title}</p>
-                                    <p className="text-sm text-white/60 truncate">{currentSong.artist}</p>
-                                </div>
-                            </>
-                        ) : (
-                            <p className="text-white/40 text-sm">No song playing</p>
-                        )}
-                    </div>
-
-                    {/* Controls (Center) */}
-                    <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center gap-8 mb-2">
-                            <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
-                                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
-                            </button>
-                            <button onClick={togglePlay} className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg shadow-white/10 hover:shadow-white/20">
-                                {isPlaying ? (
-                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
-                                ) : (
-                                    <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-                                )}
-                            </button>
-                            <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
-                                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
-                            </button>
-                        </div>
-                        {/* Mini Progress */}
-                        <div className="w-full flex items-center gap-3">
-                            <span className="text-xs text-white/40 w-8 text-right font-mono">{formatTime(progress)}</span>
-                            <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2 transition-all duration-300">
-                                <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full" style={{ width: `${progressPercent}%` }} />
-                                <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-md" style={{ left: `${progressPercent}%`, marginLeft: '-6px' }} />
-                                <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
-                            </div>
-                            <span className="text-xs text-white/40 w-8 font-mono">{formatTime(duration)}</span>
-                        </div>
-                    </div>
-
-                    {/* Volume / Extra */}
-                    <div className="hidden md:flex items-center gap-3 w-1/3 justify-end" onClick={e => e.stopPropagation()}>
-                        <button className="text-white/60 hover:text-white">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
-                        </button>
-                        <div className="w-24 h-1 bg-white/10 rounded-full relative group/vol">
-                            <div className="absolute left-0 top-0 h-full bg-white rounded-full group-hover/vol:bg-pink-500 transition-colors" style={{ width: `${volume * 100}%` }} />
-                            <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Always render Audio to maintain state when toggling view */}
-                {/* IMPORTANT: Render audio element here in mini-view return as well */}
-                <audio
-                    ref={audioRef}
-                    src={currentSong ? getStreamUrl(currentSong.id) : undefined}
-                    onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
-                    onEnded={onNext}
-                    onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-                    style={{ display: 'none' }}
-                />
-            </>
-            );
+            {fullView ? FullViewContent : MiniBarContent}
+            {/* Persistent Audio - NEVER remounts because it's always at same position */}
+            <audio
+                ref={audioRef}
+                src={currentSong ? getStreamUrl(currentSong.id) : undefined}
+                onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
+                onEnded={onNext}
+                onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+                style={{ display: 'none' }}
+            />
+        </>
+    );
 };
 
-            export default Player;
+export default Player;

@@ -425,15 +425,22 @@ class YouTubeDownloader:
                 format_str = "bv*+ba/b"  # best video + best audio / best single format
             
             opts = {
-                "format": format_str,
+                "format": "bestaudio/best",  # More robust selection
                 "outtmpl": output_template,
-                "quiet": True,
-                "no_warnings": True,
-                # Per yt-dlp docs: Use -S instead of strict -f to prefer but not require formats
-                "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-                # Let yt-dlp use default clients (don't restrict)
+                "quiet": False,  # Set to False for better debugging in logs
+                "no_warnings": False,  # Set to False temporarily to see client/format warnings
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
-                "merge_output_format": "mp4",
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": quality_opts["preferredcodec"],
+                        "preferredquality": quality_opts["preferredquality"],
+                    },
+                    {
+                        "key": "FFmpegMetadata",
+                        "add_metadata": True,
+                    },
+                ],
                 "writethumbnail": True,
                 "embedthumbnail": True,
                 "postprocessor_args": [
@@ -456,6 +463,12 @@ class YouTubeDownloader:
                 "http_headers": {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9",
+                },
+                # New: Try alternative clients to bypass SABR/format issues
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["tv_embedded", "ios_embedded", "android_embedded"]
+                    }
                 },
             }
             
