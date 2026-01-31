@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { refreshHomepage, recordPlay } from './api';
+import { refreshHomepage, recordPlay, deleteSong } from './api';
 import SongMenu from './SongMenu';
 
 const Home = ({ data, onPlaySong, onNavigate, onRefresh, onOpenPlaylistModal }) => {
@@ -128,7 +128,18 @@ const Home = ({ data, onPlaySong, onNavigate, onRefresh, onOpenPlaylistModal }) 
                                         <p className="text-white/50 text-sm truncate">{song.artist}</p>
                                     </div>
                                     <div className="opacity-0 group-hover:opacity-100 transition" onClick={e => e.stopPropagation()}>
-                                        <SongMenu song={song} onAddToPlaylist={onOpenPlaylistModal} />
+                                        <SongMenu
+                                            song={song}
+                                            onAddToPlaylist={onOpenPlaylistModal}
+                                            onDelete={async (s) => {
+                                                try {
+                                                    await deleteSong(s.id);
+                                                    onRefresh(); // Refresh list using prop
+                                                } catch (err) {
+                                                    console.error("Failed to delete song:", err);
+                                                }
+                                            }}
+                                        />
                                     </div>
                                     <span className="text-white/30 text-sm">{formatDuration(song.duration)}</span>
                                 </div>

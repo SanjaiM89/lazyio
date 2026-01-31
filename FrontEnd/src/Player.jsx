@@ -131,7 +131,10 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
 
     // Component: Video/Song Toggle
     const ModeToggle = () => {
-        if (!hasVideo) return null;
+        // Log to debug
+        // console.log("Player Toggle Check:", { hasVideo: currentSong?.has_video, mediaType: currentSong?.media_type });
+
+        if (!currentSong?.has_video) return null;
         return (
             <div className="flex bg-white/10 rounded-full p-1 z-20 mb-6">
                 <button
@@ -239,8 +242,10 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                 {/* Main Content */}
                 <div className="flex-1 flex flex-col items-center justify-center p-8">
 
-                    {/* Toggle */}
-                    <ModeToggle />
+                    {/* Toggle - Check if current song has video capability */}
+                    {currentSong?.has_video && (
+                        <ModeToggle />
+                    )}
 
                     {/* Content */}
                     {mode === 'video' && hasVideo ? (

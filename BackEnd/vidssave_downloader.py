@@ -114,7 +114,7 @@ class VidsSaveDownloader:
         
         # Parse artist from title (common format: "Artist - Title")
         title = info.get("title", "Unknown")
-        artist = "Unknown Artist"
+        artist = "" # Default to empty if not found
         if " - " in title:
             parts = title.split(" - ", 1)
             artist = parts[0].strip()
@@ -136,13 +136,30 @@ class VidsSaveDownloader:
         # Filter and format for UI consistency
         formats = []
         for r in resources:
+            quality_str = r.get("quality", "").upper()
+            abr = None
+            note = quality_str
+            
+            # Extract bitrate for audio
+            if "KBPS" in quality_str:
+                try:
+                    abr = int(quality_str.replace("KBPS", ""))
+                except ValueError:
+                    pass
+            
+            # Use quality as note for video (e.g. 720P)
+            if r.get("type") == "video":
+                note = f"{quality_str} Video"
+
             formats.append({
                 "format_id": f"{r.get('format', 'unknown')}_{r.get('quality', 'unknown')}",
                 "ext": r.get("format", "").lower(),
                 "quality": r.get("quality", ""),
                 "type": r.get("type", ""),
                 "filesize": r.get("size", 0),
-                "download_url": r.get("download_url", "")
+                "download_url": r.get("download_url", ""),
+                "abr": abr,
+                "note": note
             })
         
         # Sort: video by quality (descending), then audio

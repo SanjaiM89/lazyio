@@ -1248,7 +1248,13 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
                     "message": "Uploading to Telegram..."
                 })
                 
-                tg_msg = await tg_client.upload_file(task.file_path)
+                tg_msg = await tg_client.upload_file(
+                    task.file_path,
+                    title=task.title,
+                    artist=task.artist,
+                    duration=task.duration,
+                    thumbnail=task.thumbnail
+                )
                 if tg_msg:
                     # Save to database
                     from database import add_song
@@ -1270,7 +1276,13 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
                             "message": "Uploading video to Telegram..."
                         })
                         
-                        video_msg = await tg_client.upload_file(task.video_path)
+                        video_msg = await tg_client.upload_file(
+                            task.video_path,
+                            title=task.title,
+                            artist=task.artist,
+                            duration=task.duration,
+                            thumbnail=task.thumbnail
+                        )
                         if video_msg:
                             from database import update_song_video
                             await update_song_video(song_id, str(video_msg.id))

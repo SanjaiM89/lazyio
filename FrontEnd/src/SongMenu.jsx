@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const SongMenu = ({ song, onAddToPlaylist, className = "" }) => {
+const SongMenu = ({ song, onAddToPlaylist, onDelete, className = "" }) => {
     const [isOpen, setIsOpen] = useState(false);
     const menuRef = useRef(null);
 
@@ -29,6 +29,10 @@ const SongMenu = ({ song, onAddToPlaylist, className = "" }) => {
         setIsOpen(false);
         if (action === 'add') {
             onAddToPlaylist(song);
+        } else if (action === 'delete') {
+            if (window.confirm(`Are you sure you want to delete "${song.title}"?`)) {
+                onDelete(song);
+            }
         }
     };
 
@@ -53,6 +57,15 @@ const SongMenu = ({ song, onAddToPlaylist, className = "" }) => {
                             <svg className="w-4 h-4 text-white/50 group-hover:text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
                             Add to Playlist
                         </button>
+                        {onDelete && (
+                            <button
+                                onClick={(e) => handleAction(e, 'delete')}
+                                className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-white/10 flex items-center gap-3 group"
+                            >
+                                <svg className="w-4 h-4 text-red-400/50 group-hover:text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                Delete
+                            </button>
+                        )}
                     </div>
                 </div>
             )}

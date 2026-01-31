@@ -97,7 +97,7 @@ const YouTube = ({ onDownloadComplete, initialQuery }) => {
                 if (formatsResult.formats && formatsResult.formats.length > 0) {
                     const dynamicOptions = formatsResult.formats.map(f => ({
                         value: f.format_id,
-                        label: `${f.ext.toUpperCase()} - ${f.abr ? Math.round(f.abr) + 'kbps' : 'Unknown'} ${f.filesize ? '(' + (f.filesize / 1024 / 1024).toFixed(1) + 'MB)' : ''} ${f.note ? '- ' + f.note : ''}`
+                        label: `${f.ext.toUpperCase()} - ${f.abr ? Math.round(f.abr) + 'kbps' : (f.note || f.quality || 'Unknown')} ${f.filesize ? '(' + (f.filesize / 1024 / 1024).toFixed(1) + 'MB)' : ''}`
                     }));
                     setAvailableFormats(dynamicOptions);
                     if (dynamicOptions.length > 0) {
