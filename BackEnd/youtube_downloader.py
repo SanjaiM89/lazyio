@@ -418,14 +418,15 @@ class YouTubeDownloader:
             )
             
             # Select format based on quality
-            # "bestvideo+bestaudio/best" is standard for best quality
-            # Merge output to mp4/mkv. We prefer mp4 for compatibility
+            # Per yt-dlp docs: use "bv*+ba/b" for best video with audio fallback
+            # "bv*" = best video that could contain audio, "ba" = best audio
+            # This is more permissive than strict "bestvideo+bestaudio" when separate streams aren't available
             if quality != "best" and quality.endswith("p"):
                 height = quality[:-1]
-                # Try specific height -> fallback to best video <= height -> fallback to best
-                format_str = f"bestvideo[height={height}]+bestaudio/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+                # Try specific height with audio, fallback to best overall
+                format_str = f"bv*[height<={height}]+ba/b"
             else:
-                format_str = "bestvideo+bestaudio/best"
+                format_str = "bv*+ba/b"  # best video + best audio / best single format
             
             opts = {
                 "format": format_str,
@@ -567,7 +568,10 @@ class YouTubeDownloader:
             )
             
             opts = {
-                "format": "bestaudio/best",
+                # Per yt-dlp docs: "ba*" = best audio that could contain video
+                # This is more permissive than "bestaudio" when audio-only streams aren't available
+                # FFmpegExtractAudio postprocessor will extract the audio from whatever format is downloaded
+                "format": "ba*/b",  # best audio (with video fallback) / best overall
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
