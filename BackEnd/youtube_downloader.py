@@ -213,10 +213,10 @@ class YouTubeDownloader:
             "check_formats": False,  # --no-check-formats: Don't verify format availability
             # Use format_sort (-S) instead of format (-f) per user's GitHub suggestion
             "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-            # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
+            # android_vr confirmed working in local tests (Jul 2026)
             "extractor_args": {
                 "youtube": {
-                    "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                    "player_client": ["android_vr"],
                 }
             },
         }
@@ -435,10 +435,10 @@ class YouTubeDownloader:
                 "no_warnings": True,
                 # Per yt-dlp docs: Use -S instead of strict -f to prefer but not require formats
                 "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-                # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
+                # android_vr confirmed working in local tests (Jul 2026)
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                        "player_client": ["android_vr"],
                     }
                 },
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
@@ -568,18 +568,16 @@ class YouTubeDownloader:
             )
             
             opts = {
-                # Per yt-dlp docs: "ba*" = best audio that could contain video
-                # This is more permissive than "bestaudio" when audio-only streams aren't available
-                # FFmpegExtractAudio postprocessor will extract the audio from whatever format is downloaded
-                "format": "ba*/b",  # best audio (with video fallback) / best overall
+                # Use format 140 (m4a 128k) first, fallback to any audio, then any format
+                # Format 140 was confirmed working in local tests
+                "format": "140/m4a/bestaudio/best",
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
-                # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
-                # android_vr and ios_downgraded work best without JS runtimes
+                # android_vr confirmed working in local tests (Jul 2026)
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                        "player_client": ["android_vr"],
                     }
                 },
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
