@@ -123,32 +123,47 @@ class YouTubeDownloader:
             os.environ["PATH"] += os.pathsep + deno_bin_dir
             print(f"[YT] Added Deno to PATH: {deno_bin_dir}")
 
-        if os.path.exists(deno_exe):
-            print(f"[YT] Deno detected at: {deno_exe}")
-            return
+        if shutil.which("deno") or os.path.exists(deno_exe):
+            print(f"[YT] Deno found at {deno_exe}")
+            if deno_bin_dir not in os.environ["PATH"]:
+                 os.environ["PATH"] += os.pathsep + deno_bin_dir
+        else:
+            print("[YT] Deno not found. Attempting to install via Python...")
+            try:
+                import urllib.request
+                import zipfile
+                import io
+                import stat
 
-        print("[YT] Deno not found. Attempting to install...")
-        try:
-            # Use urllib to download to avoid curl dependency
-            import urllib.request
-            import tempfile
-            
-            install_script_url = "https://deno.land/install.sh"
-            with tempfile.NamedTemporaryFile(mode='wb', delete=False) as tf:
-                print(f"[YT] Downloading Deno installer from {install_script_url}...")
-                with urllib.request.urlopen(install_script_url) as response:
-                    tf.write(response.read())
-                temp_script_path = tf.name
+                # 1. Create directory
+                if not os.path.exists(deno_bin_dir):
+                    os.makedirs(deno_bin_dir)
 
-            print("Running Deno installer...")
-            # Run with sh, inheriting environment
-            subprocess.run(["sh", temp_script_path], check=True, env=os.environ.copy())
-            os.remove(temp_script_path)
-            
-            print("[YT] Deno installed successfully.")
-        except Exception as e:
-            print(f"[YT] Failed to install Deno: {e}")
-            print("[YT] SABR download functionality may be limited.")
+                # 2. Download directly from GitHub releases (Linux x64)
+                download_url = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip"
+                
+                print(f"[YT] Downloading Deno from {download_url}...")
+                with urllib.request.urlopen(download_url) as response:
+                    zip_content = response.read()
+                
+                # 3. Extract using Python's built-in zipfile
+                print("[YT] Extracting Deno...")
+                with zipfile.ZipFile(io.BytesIO(zip_content)) as zf:
+                    zf.extract("deno", path=deno_bin_dir)
+                
+                # 4. Make executable
+                print("[YT] Setting executable permissions...")
+                os.chmod(deno_exe, os.stat(deno_exe).st_mode | stat.S_IEXEC)
+                
+                # 5. Add to PATH
+                if deno_bin_dir not in os.environ["PATH"]:
+                    print(f"[YT] Added Deno to PATH: {deno_bin_dir}")
+                    os.environ["PATH"] += os.pathsep + deno_bin_dir
+                    
+                print("[YT] Deno installed successfully.")
+            except Exception as e:
+                print(f"[YT] Failed to install Deno: {e}")
+                print("[YT] SABR download functionality may be limited.")
 
     def __init__(self):
         self._cancelled_tasks: set = set()
