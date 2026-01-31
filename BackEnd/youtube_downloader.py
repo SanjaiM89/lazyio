@@ -364,7 +364,12 @@ class YouTubeDownloader:
             # Select format based on quality
             # "bestvideo+bestaudio/best" is standard for best quality
             # Merge output to mp4/mkv. We prefer mp4 for compatibility
-            format_str = f"bestvideo[height<={quality[:-1]}]+bestaudio/best" if quality != "best" and quality.endswith("p") else "bestvideo+bestaudio/best"
+            if quality != "best" and quality.endswith("p"):
+                height = quality[:-1]
+                # Try specific height -> fallback to best video <= height -> fallback to best
+                format_str = f"bestvideo[height={height}]+bestaudio/bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+            else:
+                format_str = "bestvideo+bestaudio/best"
             
             opts = {
                 "format": format_str,
