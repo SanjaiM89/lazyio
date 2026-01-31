@@ -1,12 +1,58 @@
-import React, { useState, useCallback, useRef } from 'react';
-import { uploadSongs } from './api';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import { uploadSongs, getWsUrl } from './api';
 
 const Upload = ({ onUploadComplete }) => {
     const [files, setFiles] = useState([]);
     const [uploading, setUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState({});
+    const [uploadStage, setUploadStage] = useState(''); // Current stage message
     const [dragActive, setDragActive] = useState(false);
     const inputRef = useRef(null);
+    const wsRef = useRef(null);
+
+    // Connect to WebSocket for upload progress
+    useEffect(() => {
+        if (uploading) {
+            const ws = new WebSocket(getWsUrl());
+            wsRef.current = ws;
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.event === 'upload_progress') {
+                        const { file_index, total_files, stage, message } = data.data;
+                        // Update progress based on stage
+                        const stageProgress = {
+                            'saving': 10,
+                            'metadata': 20,
+                            'telegram': 50,
+                            'extracting_audio': 70,
+                            'database': 90,
+                            'complete': 100,
+                            'error': -1
+                        };
+                        const percent = stageProgress[stage] || 0;
+
+                        setUploadProgress(prev => ({
+                            ...prev,
+                            [file_index]: percent
+                        }));
+                        setUploadStage(message);
+                    } else if (data.event === 'upload_complete') {
+                        setUploadStage(`Upload complete! ${data.data.count} file(s) added.`);
+                    }
+                } catch (e) {
+                    console.error('WS parse error:', e);
+                }
+            };
+
+            ws.onerror = (e) => console.error('WS error:', e);
+
+            return () => {
+                ws.close();
+            };
+        }
+    }, [uploading]);
 
     const handleDrag = useCallback((e) => {
         e.preventDefault();
@@ -41,9 +87,8 @@ const Upload = ({ onUploadComplete }) => {
     const handleUpload = async () => {
         if (files.length === 0) return;
         setUploading(true);
+        setUploadStage('Preparing upload...');
 
-        // Upload files one by one (or all at once? API takes list)
-        // Let's do all at once as per API design
         const formData = new FormData();
         files.forEach(file => {
             formData.append('files', file);
@@ -51,31 +96,33 @@ const Upload = ({ onUploadComplete }) => {
 
         try {
             await uploadSongs(formData, (percent) => {
-                // Since we upload all files in one request, we set all progress bars to the same global percentage
-                // This is a limitation of the current bulk API. 
-                // To have individual progress, we'd need to upload one by one.
+                // HTTP upload progress (file transfer to server)
+                if (percent < 100) {
+                    setUploadStage(`Uploading to server... ${percent}%`);
+                }
                 setUploadProgress(prev => {
                     const newProgress = {};
-                    files.forEach((_, idx) => newProgress[idx] = percent);
+                    files.forEach((_, idx) => newProgress[idx] = Math.min(percent * 0.1, 10)); // First 10%
                     return newProgress;
                 });
             });
 
-            // Success
-            setUploadProgress(prev => {
-                const completed = {};
-                files.forEach((_, idx) => completed[idx] = 100);
-                return completed;
-            });
-
+            // Wait a moment for WebSocket to receive final updates
             setTimeout(() => {
                 setFiles([]);
                 setUploadProgress({});
+                setUploadStage('');
                 onUploadComplete?.();
-            }, 1000);
+            }, 2000);
         } catch (error) {
             console.error("Upload failed:", error);
-            alert("Upload failed! Check console.");
+            setUploadStage(`Upload failed: ${error.message || 'Network error'}`);
+            // Alert with more info
+            if (error.response?.status === 502) {
+                alert("Server error (502). The backend might be restarting. Please try again in a moment.");
+            } else {
+                alert("Upload failed! Check console for details.");
+            }
         } finally {
             setUploading(false);
         }
@@ -213,6 +260,13 @@ const Upload = ({ onUploadComplete }) => {
                                 `Upload ${files.length} file${files.length > 1 ? 's' : ''}`
                             )}
                         </button>
+
+                        {/* Upload Stage Message */}
+                        {uploadStage && (
+                            <div className="mt-4 p-3 rounded-xl bg-pink-500/10 border border-pink-500/20">
+                                <p className="text-sm text-pink-300">{uploadStage}</p>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>

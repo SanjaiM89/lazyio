@@ -285,71 +285,150 @@ async def upload_files(files: list[UploadFile] = File(...)):
     Uploads files to server temp, extracts metadata, uploads to Telegram,
     saves to DB, then cleans up.
     For video files: also extracts audio and uploads as separate stream.
+    Broadcasts progress via WebSocket.
     """
     from audio_extractor import extract_audio_from_video, cleanup_extracted_file
     
     VIDEO_EXTENSIONS = ['.mp4', '.mkv', '.webm', '.avi', '.mov']
     uploaded_songs = []
+    total_files = len(files)
     
-    for file in files:
-        temp_path = os.path.join(TEMP_DIR, file.filename)
-        with open(temp_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    for i, file in enumerate(files):
+        file_name = file.filename or f"unknown_{i}"
+        temp_path = os.path.join(TEMP_DIR, file_name)
         
-        # Check if it's a video file
-        is_video = any(file.filename.lower().endswith(ext) for ext in VIDEO_EXTENSIONS)
-        
-        # Extract Metadata
-        meta = await extract_metadata(temp_path)
-        
-        # Upload main file to Telegram (video or audio)
-        tg_msg = await tg_client.upload_file(temp_path)
-        if not tg_msg:
+        try:
+            # Broadcast: Starting upload for this file
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "saving",
+                "message": f"Saving {file_name}..."
+            })
+            
+            with open(temp_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Check if it's a video file
+            is_video = any(file_name.lower().endswith(ext) for ext in VIDEO_EXTENSIONS)
+            
+            # Broadcast: Extracting metadata
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "metadata",
+                "message": f"Extracting metadata from {file_name}..."
+            })
+            
+            # Extract Metadata
+            meta = await extract_metadata(temp_path)
+            
+            # Broadcast: Uploading to Telegram
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "telegram",
+                "message": f"Uploading {file_name} to Telegram..."
+            })
+            
+            # Upload main file to Telegram (video or audio)
+            tg_msg = await tg_client.upload_file(temp_path)
+            if not tg_msg:
+                await notify_update("upload_progress", {
+                    "file_name": file_name,
+                    "file_index": i,
+                    "total_files": total_files,
+                    "stage": "error",
+                    "message": f"Failed to upload {file_name} to Telegram"
+                })
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                continue
+                
+            telegram_ref = str(tg_msg.id)
+            
+            # For video files, also extract and upload audio
+            audio_telegram_id = None
+            video_telegram_id = None
+            
+            if is_video:
+                video_telegram_id = telegram_ref
+                
+                # Broadcast: Extracting audio
+                await notify_update("upload_progress", {
+                    "file_name": file_name,
+                    "file_index": i,
+                    "total_files": total_files,
+                    "stage": "extracting_audio",
+                    "message": f"Extracting audio from {file_name}..."
+                })
+                
+                # Extract audio from video
+                audio_path = await extract_audio_from_video(temp_path)
+                if audio_path:
+                    audio_msg = await tg_client.upload_file(audio_path)
+                    if audio_msg:
+                        audio_telegram_id = str(audio_msg.id)
+                        print(f"[UPLOAD] Audio extracted and uploaded: {audio_telegram_id}")
+                    cleanup_extracted_file(audio_path)
+            else:
+                audio_telegram_id = telegram_ref
+            
+            # Broadcast: Saving to database
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "database",
+                "message": f"Saving {file_name} to database..."
+            })
+            
+            # Save to DB with both IDs
+            song_id = await add_song(
+                telegram_file_id=audio_telegram_id or video_telegram_id,
+                audio_telegram_id=audio_telegram_id,
+                video_telegram_id=video_telegram_id,
+                has_video=is_video,
+                title=meta.get("title"),
+                artist=meta.get("artist"),
+                album=meta.get("album"),
+                duration=meta.get("duration"),
+                cover_art=meta.get("cover_art"),
+                file_name=file_name,
+                file_size=os.path.getsize(temp_path)
+            )
+            
+            uploaded_songs.append({"id": song_id, "title": meta.get("title")})
+            
+            # Broadcast: File complete
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "complete",
+                "message": f"Upload complete: {meta.get('title', file_name)}"
+            })
+            
+        except Exception as e:
+            print(f"[UPLOAD] Error uploading {file_name}: {e}")
+            await notify_update("upload_progress", {
+                "file_name": file_name,
+                "file_index": i,
+                "total_files": total_files,
+                "stage": "error",
+                "message": f"Error: {str(e)}"
+            })
+        finally:
+            # Cleanup
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            continue
-            
-        telegram_ref = str(tg_msg.id)
         
-        # For video files, also extract and upload audio
-        audio_telegram_id = None
-        video_telegram_id = None
-        
-        if is_video:
-            video_telegram_id = telegram_ref
-            
-            # Extract audio from video
-            audio_path = await extract_audio_from_video(temp_path)
-            if audio_path:
-                audio_msg = await tg_client.upload_file(audio_path)
-                if audio_msg:
-                    audio_telegram_id = str(audio_msg.id)
-                    print(f"[UPLOAD] Audio extracted and uploaded: {audio_telegram_id}")
-                cleanup_extracted_file(audio_path)
-        else:
-            audio_telegram_id = telegram_ref
-        
-        # Save to DB with both IDs
-        song_id = await add_song(
-            telegram_file_id=audio_telegram_id or video_telegram_id,
-            audio_telegram_id=audio_telegram_id,
-            video_telegram_id=video_telegram_id,
-            has_video=is_video,
-            title=meta.get("title"),
-            artist=meta.get("artist"),
-            album=meta.get("album"),
-            duration=meta.get("duration"),
-            cover_art=meta.get("cover_art"),
-            file_name=file.filename,
-            file_size=os.path.getsize(temp_path)
-        )
-        
-        uploaded_songs.append({"id": song_id, "title": meta.get("title")})
-        
-        # Cleanup
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        
+    # Broadcast: All uploads complete
+    await notify_update("upload_complete", {"count": len(uploaded_songs)})
+    
     return {"status": "success", "uploaded": uploaded_songs}
 
 @app.get("/api/songs")
