@@ -175,7 +175,6 @@ class YouTubeDownloader:
             'quiet': True,
             'ignoreerrors': True,
             'no_warnings': True,
-            'js_runtimes': {'node': {}},
         }
         
         
