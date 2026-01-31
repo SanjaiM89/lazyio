@@ -368,10 +368,13 @@ async def stream_song(song_id: str, request: Request, type: str = None, quality:
         )
 
     except FileNotFound:
-        raise HTTPException(status_code=404, detail="File lost in Telegram")
+        print(f"[Stream] 404 Error: File {msg_id} not found in Telegram channel.")
+        raise HTTPException(status_code=404, detail="File lost in Telegram. Please re-upload.")
     except Exception as e:
-        print(f"Stream error: {e}")
-        raise HTTPException(status_code=500, detail="Streaming error")
+        print(f"[Stream] 500 Error for song {song_id} (msg={msg_id}): {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Streaming error: {str(e)}")
 
 
 

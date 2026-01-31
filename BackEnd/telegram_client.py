@@ -170,8 +170,17 @@ class TelegramClientWrapper:
 
     async def get_file_info(self, message_id: int) -> Dict[str, Any]:
         try:
+            # Try fetching message
             message = await self.client.get_messages(self.bin_channel, ids=message_id)
+            
+            # If not found, maybe channel cache is stale? Try resolving again.
+            if not message:
+                print(f"[TG] Message {message_id} not found immediately. Retrying with entity resolution...")
+                await self._resolve_bin_channel()
+                message = await self.client.get_messages(self.bin_channel, ids=message_id)
+
             if not message or not message.media:
+                print(f"[TG] Message {message_id} is missing or has no media in channel {self.bin_channel}")
                 raise FileNotFound("No media found")
             
             return {
@@ -180,7 +189,7 @@ class TelegramClientWrapper:
                 "file_size": message.file.size
             }
         except Exception as e:
-            print(f"Error get_file_info: {e}")
+            print(f"[TG] Error get_file_info(id={message_id}, ch={self.bin_channel}): {e}")
             raise FileNotFound(f"Message {message_id} not found")
 
     async def stream_file(self, message_id: int, offset: int = 0, limit: int = 0) -> AsyncGenerator[bytes, None]:
