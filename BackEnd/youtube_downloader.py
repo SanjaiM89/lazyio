@@ -371,14 +371,18 @@ class YouTubeDownloader:
              "quiet": True,
              "no_warnings": True,
              "extract_flat": False,
-             "listformats": True, # This just prints to stdout, we need info structure
+             # "listformats": True, # REMOVED: potentially causes return value issues
              "js_runtimes": {"deno": {}},
         }
         
         def _fetch_formats():
-            with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return info.get("formats", [])
+            try:
+                with YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return info.get("formats", [])
+            except Exception as e:
+                print(f"[YT] Error extracting formats: {e}")
+                raise e
                 
         loop = asyncio.get_event_loop()
         formats = await loop.run_in_executor(None, _fetch_formats)
@@ -387,8 +391,8 @@ class YouTubeDownloader:
         results = []
         for f in formats:
             # We care about audio quality largely
+            # Some formats might have vcodec='none' (audio only)
             if f.get("vcodec") == "none" and f.get("acodec") != "none":
-                # Audio only
                 results.append({
                     "format_id": f.get("format_id"),
                     "ext": f.get("ext"),
