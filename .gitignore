@@ -5,3 +5,8 @@ build/
 .idea/
 BackEnd/config.env
 *.session
+
+BackEnd/venv/
+BackEnd/__pycache__/
+**/__pycache__/
+**/venv/

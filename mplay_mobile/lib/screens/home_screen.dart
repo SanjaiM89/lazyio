@@ -9,6 +9,7 @@ import '../constants.dart';
 import '../providers/video_provider.dart';
 import 'video_player_screen.dart';
 import 'playlist_detail_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final Function(int, [String?]) onNavigate;
@@ -84,9 +85,14 @@ class _HomeScreenState extends State<HomeScreen> {
                   Text("Your personal music space", style: TextStyle(color: Colors.white54)),
                 ],
               ),
-              CircleAvatar(
-                backgroundColor: kPrimaryColor.withOpacity(0.2),
-                child: const Text("U", style: TextStyle(color: kPrimaryColor)),
+              GestureDetector(
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
+                ),
+                child: CircleAvatar(
+                  backgroundColor: kPrimaryColor.withOpacity(0.2),
+                  child: const Icon(Icons.settings, color: kPrimaryColor),
+                ),
               )
             ],
           ),

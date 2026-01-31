@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
 import 'models.dart';
 import 'api_service.dart';
 import 'dart:convert';
@@ -19,9 +20,14 @@ class MusicProvider with ChangeNotifier {
 
   MusicProvider() {
     _loadState(); // Load saved state
+    _initAudioSession();
     _audioPlayer.setLoopMode(LoopMode.all); // Enable looping by default
     
     _audioPlayer.playerStateStream.listen((state) {
+      _isPlaying = state.playing;
+      notifyListeners();
+    });
+
       _isPlaying = state.playing;
       notifyListeners();
     });
@@ -44,6 +50,28 @@ class MusicProvider with ChangeNotifier {
       notifyListeners();
     });
   }
+
+  Future<void> _initAudioSession() async {
+    final session = await AudioSession.instance;
+    await session.configure(const AudioSessionConfiguration(
+      avAudioSessionCategory: AVAudioSessionCategory.playback,
+      avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.duckOthers,
+      avAudioSessionMode: AVAudioSessionMode.defaultMode,
+      avAudioSessionRouteSharingPolicy: AVAudioSessionRouteSharingPolicy.defaultPolicy,
+      avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.notifyOthersOnDeactivation,
+      androidAudioAttributes: AndroidAudioAttributes(
+        contentType: AndroidAudioContentType.music,
+        flags: AndroidAudioFlags.none, // Android 15: Flags might need adjustment for direct offload if wrapped
+        usage: AndroidAudioUsage.media,
+      ),
+      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+      androidWillPauseWhenDucked: true,
+    ));
+    
+    // Android 15 specific check (if specific API becomes available in Dart)
+    // Currently configuring for standard Media/Music usage which allows high-res path on supported devices.
+  }
+
 
   // Sync with running audio service if app is restarted
   Future<void> _syncWithAudioService() async {

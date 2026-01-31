@@ -14,13 +14,34 @@ import 'library_provider.dart';
 import 'providers/video_provider.dart';
 import 'widgets/video_overlay.dart';
 import 'screens/unified_player_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/connection_screen.dart';
+import 'screens/settings_screen.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized(); // Required before SharedPreferences
+  
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
     androidNotificationChannelName: 'Audio playback',
     androidNotificationOngoing: true,
   );
+
+  // Load Saved Connection
+  final prefs = await SharedPreferences.getInstance();
+  final ip = prefs.getString('server_ip');
+  final port = prefs.getString('server_port');
+  
+  Widget initialScreen;
+  
+  if (ip != null && port != null && ip.isNotEmpty && port.isNotEmpty) {
+    AppConfig.baseUrl = 'http://$ip:$port';
+    AppConfig.wsUrl = 'ws://$ip:$port/ws';
+    initialScreen = const MainScreen();
+  } else {
+    initialScreen = const ConnectionScreen();
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -28,13 +49,14 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
         ChangeNotifierProvider(create: (_) => VideoProvider()),
       ],
-      child: const MyApp(),
+      child: MyApp(home: initialScreen),
     ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final Widget? home;
+  const MyApp({super.key, this.home});
 
   @override
   Widget build(BuildContext context) {
@@ -78,7 +100,12 @@ class MyApp extends StatelessWidget {
           secondary: kSecondaryColor,
         ),
       ),
-      home: const MainScreen(),
+      home: home ?? const MainScreen(),
+      routes: {
+        '/home': (context) => const MainScreen(),
+        '/connection': (context) => const ConnectionScreen(),
+        '/settings': (context) => const SettingsScreen(),
+      },
     );
   }
 }

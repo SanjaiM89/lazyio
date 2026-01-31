@@ -1,13 +1,21 @@
 import asyncio
 import os
+import time
 import mimetypes
 from typing import AsyncGenerator, Dict, Any, Optional
-from pyrogram import Client, filters
-from pyrogram.errors import FloodWait
-from pyrogram.types import Message
+
+# 1. OPTIMIZATION: Install uvloop for faster async handling
+try:
+    import uvloop
+    asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+except ImportError:
+    pass
+
+from telethon import TelegramClient, events, utils, errors
+from telethon.tl.types import DocumentAttributeFilename, InputPeerChannel
 from dotenv import load_dotenv
 
-# Load env from root or current dir
+# Load env
 load_dotenv("../config.env")
 load_dotenv("config.env")
 
@@ -24,308 +32,209 @@ class FileNotFound(Exception):
 class TelegramClientWrapper:
     def __init__(self):
         if not all([API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL]):
-            raise ValueError("Missing Telegram Config (API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL)")
+            raise ValueError("Missing Telegram Config")
         
-        # Use in_memory session on cloud deployments, disk session locally
-        is_cloud = os.getenv("CLOUD_DEPLOYMENT") == "true" or os.getenv("FLY_ALLOC_ID") is not None
-        
-        self.app = Client(
-            name="SpotifyCloneBot",
-            api_id=int(API_ID),
-            api_hash=API_HASH,
-            bot_token=BOT_TOKEN,
-            in_memory=is_cloud, 
-        )
+        # 1. OPTIMIZATION: Multi-Client Pool (IDM Style)
+
+        # We spawn multiple clients to open multiple TCP connections.
+        self.pool_size = 4  # 4 Workers = ~4x Speed
+        self.clients = []
+        self.session_base = "TelethonBot"
         self.bin_channel = BIN_CHANNEL
-        self._main_loop = None
-        self._channel_access_hash = None  # Cached from MongoDB
+        self._bin_entity = None
+        
+        # Initialize the pool
+        for i in range(self.pool_size):
+            session_name = f"{self.session_base}_worker_{i}"
+            client = TelegramClient(
+                session_name,
+                int(API_ID),
+                API_HASH,
+                connection_retries=5,
+                retry_delay=1,
+                flood_sleep_threshold=60
+            )
+            self.clients.append(client)
+            print(f"[INIT] Prepared worker {i}: {session_name}")
 
-        @self.app.on_message(filters.command("start"))
-        async def start_command(client, message):
-             await message.reply_text(f"I am here! 🎵\nBot is online.\nSession Mode: {'Memory' if self.app.in_memory else 'Disk'}")
+        # The primary client (worker 0) for general tasks
+        self.client = self.clients[0]
 
-        @self.app.on_message(filters.all & filters.chat(self.bin_channel))
-        async def seeding_handler(client, message):
-            from peer_cache import save_peer
-
-            print(f"🎯 msg received from BIN_CHANNEL ({message.chat.title})! Saving access_hash...")
-            
-            # Extract raw ID
-            if str(message.chat.id).startswith("-100"):
-                raw_id = int(str(abs(message.chat.id))[3:])
-            else:
-                raw_id = abs(message.chat.id)
-                
-            # Save peer to MongoDB
-            peer = await client.resolve_peer(message.chat.id)
-            if hasattr(peer, 'access_hash'):
-                await save_peer(raw_id, peer.access_hash)
-                self._channel_access_hash = peer.access_hash
-                print("✅ Channel Access Hash saved to MongoDB! You can now deploy to Render.")
-
-                    
     async def start(self):
-        import asyncio
-        self._main_loop = asyncio.get_running_loop()
-        await self.app.start()
-        print(f"Telegram Client Started (Session Mode: {'Memory' if self.app.in_memory else 'Disk'})")
-        # Try to resolve and cache the bin_channel peer on startup
+        print(f"Starting {self.pool_size} Telegram Clients (Multi-Socket)...")
+        
+        # Start all clients in parallel
+        tasks = []
+        for i, client in enumerate(self.clients):
+            tasks.append(client.start(bot_token=BOT_TOKEN))
+        
+        await asyncio.gather(*tasks)
+        
+        # Check cryptg
+        try:
+            import cryptg
+            print("🚀 Fast Crypto (cryptg) is detected and active.")
+        except ImportError:
+            print("⚠️ PERFORMANCE WARNING: 'cryptg' is not installed! Streaming will be slow.")
+        
+        me = await self.client.get_me()
+        print(f"Bot info: {me.first_name} (@{me.username}) | Pool Size: {self.pool_size}")
+        
+        # Resolve entity using primary client
         await self._resolve_bin_channel()
 
-    async def _resolve_bin_channel(self):
-        """Attempt to resolve the bin channel peer on startup."""
-        from pyrogram import raw
-        from peer_cache import get_peer, save_peer
-        
-        chat_id = self.bin_channel
-        
-        # Extract the actual channel ID from marked ID (-100XXXXXXXXXX -> XXXXXXXXXX)
-        if str(chat_id).startswith("-100"):
-            raw_channel_id = int(str(abs(chat_id))[3:])
-        else:
-            raw_channel_id = abs(chat_id)
-        
-        # 1. Try to load cached access_hash from MongoDB
-        cached_hash = await get_peer(raw_channel_id)
-        if cached_hash:
-            print(f"[PeerCache] Loaded cached access_hash for channel {raw_channel_id}")
-            self._channel_access_hash = cached_hash
-            
-            # Verify it works
-            try:
-                input_channel = raw.types.InputChannel(
-                    channel_id=raw_channel_id,
-                    access_hash=cached_hash
-                )
-                result = await self.app.invoke(
-                    raw.functions.channels.GetFullChannel(channel=input_channel)
-                )
-                chat_title = getattr(result.chats[0], 'title', 'Unknown')
-                print(f"Resolved BIN_CHANNEL from cache: {chat_title}")
-                return
-            except Exception as e:
-                print(f"Cached access_hash invalid: {e}")
-        
-        # 2. Try direct resolution (works locally with session file nearby)
-        try:
-            chat = await self.app.get_chat(chat_id)
-            print(f"Resolved BIN_CHANNEL directly: {chat.title or chat.id}")
-            
-            # Save the access_hash to MongoDB for future use
-            if hasattr(chat, 'id'):
-                # Get the access hash from internal cache
-                peer = await self.app.resolve_peer(chat_id)
-                if hasattr(peer, 'access_hash'):
-                    await save_peer(raw_channel_id, peer.access_hash)
-                    self._channel_access_hash = peer.access_hash
-            return
-        except Exception as e:
-            print(f"Direct resolution failed: {e}")
-
-        # 3. Try get_chat_member to force resolution (Works for Bots)
-        print("Attempting to resolve via get_chat_member...")
-        try:
-            # Getting 'me' (the bot itself) as a member often forces the peer to be cached
-            me = await self.app.get_me()
-            headers = await self.app.get_chat_member(chat_id, me.id)
-            print(f"Found BIN_CHANNEL via member check: {headers.chat.title}")
-            
-            # Now that we've interacted, resolve_peer should work
-            peer = await self.app.resolve_peer(chat_id)
-            if hasattr(peer, 'access_hash'):
-                await save_peer(raw_channel_id, peer.access_hash)
-                self._channel_access_hash = peer.access_hash
-            return
-        except Exception as e:
-             print(f"Error checking chat member: {e}")
-        
-        print("WARNING: Could not resolve BIN_CHANNEL. Uploads may fail.")
-        print("TIP: Run locally first to seed the peer cache in MongoDB.")
-
     async def stop(self):
+        print("Stopping Telegram Client Pool...")
+        tasks = [client.disconnect() for client in self.clients]
+        await asyncio.gather(*tasks)
+
+    async def _resolve_bin_channel(self):
+        """Resolves and caches the BIN_CHANNEL entity for ALL clients."""
         try:
-            if self.app.is_connected:
-                await self.app.stop()
-                print("Telegram Client Stopped")
+            # Resolve on primary client first
+            self._bin_entity = await self.client.get_input_entity(self.bin_channel)
+            print(f"✅  Resolved BIN_CHANNEL (Worker 0): {self.bin_channel}")
+            
+            # Resolve on other workers to populate their cache
+            # This ensures they can fetch messages during retries
+            for i, worker in enumerate(self.clients[1:], 1):
+                try:
+                    await worker.get_input_entity(self.bin_channel)
+                    print(f"✅  Resolved BIN_CHANNEL (Worker {i}): {self.bin_channel}")
+                except Exception as e:
+                    print(f"⚠️ Worker {i} failed to resolve channel: {e}")
+                    
         except Exception as e:
-            print(f"Error stopping Telegram Client: {e}")
-            # If standard stop fails implies loop issue, force close session
-            try:
-                 if hasattr(self.app, 'session'):
-                    await self.app.session.close()
-            except:
-                pass
+            print(f"❌  Could not resolve BIN_CHANNEL: {e}")
+            print("   Uploads might fail if the bot hasn't seen the channel yet.")
+
+    async def download_media(self, message_id: int, file_path: str):
+        """Download media to a local file path"""
+        try:
+             # Use worker 0 for simplicity or implement round robin if needed
+             message = await self.client.get_messages(self.bin_channel, ids=message_id)
+             if not message or not message.media:
+                 raise FileNotFound(f"Message {message_id} not found")
+                 
+             await self.client.download_media(message, file_path)
+             return file_path
+        except Exception as e:
+            print(f"[TG] Download failed: {e}")
+            return None
 
     def _sanitize_filename(self, filename: str) -> str:
-        """Remove problematic characters from filename"""
         import re
-        # Replace problematic Unicode characters
         filename = filename.replace('｜', '-').replace('|', '-')
-        # Remove other potentially problematic characters
         filename = re.sub(r'[<>:"/\\?*]', '', filename)
-        # Limit length
         if len(filename) > 200:
             name, ext = os.path.splitext(filename)
             filename = name[:195] + ext
         return filename
 
-    async def upload_file(self, file_path: str, progress_callback=None) -> Optional[Message]:
-        """Uploads a file to the bin channel with optional progress tracking."""
-        import shutil
-        import time
-        import asyncio
-        
-        # DEBUG: Check event loops
-        current_loop = asyncio.get_running_loop()
-        client_loop = getattr(self.app, "loop", None)
-        print(f"[TG DEBUG] Current Loop: {id(current_loop)}")
-        print(f"[TG DEBUG] Client Loop: {id(client_loop)}")
-        
-        # PATCH: If loops mismatch, update client loop to current loop
-        if client_loop and client_loop != current_loop:
-            print(f"[TG DEBUG] Loops mismatch! Patching client loop...")
-            self.app.loop = current_loop
-            # Also need to update the internal session loop if it exists
-            if hasattr(self.app, "session") and hasattr(self.app.session, "loop"):
-                 self.app.session.loop = current_loop
-
-        # Check if file exists
+    async def upload_file(self, file_path: str, progress_callback=None) -> Optional[Any]:
         if not os.path.exists(file_path):
-            print(f"[TG] File not found: {file_path}")
             return None
-        
-        # Sanitize filename - copy to temp with clean name if needed
-        original_name = os.path.basename(file_path)
-        clean_name = self._sanitize_filename(original_name)
-        
-        upload_path = file_path
-        temp_copy = None
-        
-        if clean_name != original_name:
-            print(f"[TG] Sanitizing filename: {original_name} -> {clean_name}")
-            temp_copy = os.path.join(os.path.dirname(file_path), clean_name)
-            try:
-                shutil.copy2(file_path, temp_copy)
-                upload_path = temp_copy
-            except Exception as e:
-                print(f"[TG] Could not copy file: {e}")
-                upload_path = file_path
-        
-        file_size = os.path.getsize(upload_path)
+
+        clean_name = self._sanitize_filename(os.path.basename(file_path))
         start_time = time.time()
         
-        def _progress(current, total):
+        async def _progress(current, total):
             if progress_callback:
-                elapsed = time.time() - start_time
+                now = time.time()
+                elapsed = now - start_time
                 speed = current / elapsed if elapsed > 0 else 0
                 progress_callback(current, total, speed)
-        
+
         try:
-            print(f"[TG] Starting upload: {upload_path} ({file_size} bytes)")
-            msg = await self.app.send_document(
-                chat_id=self.bin_channel,
-                document=upload_path,
+            print(f"[TG] Uploading {clean_name}...")
+            
+            attributes = []
+            if clean_name != os.path.basename(file_path):
+                attributes.append(DocumentAttributeFilename(file_name=clean_name))
+            
+            # Telethon handles parallel upload automatically for large files
+            msg = await self.client.send_file(
+                self.bin_channel,
+                file_path,
                 caption=f"Uploaded via mPlay: {clean_name}",
-                progress=_progress
+                progress_callback=_progress if progress_callback else None,
+                attributes=attributes,
+                force_document=False,
+                supports_streaming=True  # Important for video seeking
             )
-            print(f"[TG] Upload complete! Message ID: {msg.id}")
+            print(f"[TG] Upload complete! Msg ID: {msg.id}")
             return msg
         except Exception as e:
             print(f"[TG] Upload failed: {e}")
-            import traceback
-            traceback.print_exc()
             return None
-        finally:
-            # Cleanup temp copy
-            if temp_copy and os.path.exists(temp_copy):
-                try:
-                    os.remove(temp_copy)
-                except:
-                    pass
-
-    # --- Streaming Logic (Adapted from Thunder) ---
-
-    async def get_message(self, message_id: int) -> Message:
-        while True:
-            try:
-                message = await self.app.get_messages(self.bin_channel, message_id)
-                if not message or message.empty:
-                     raise FileNotFound(f"Message {message_id} not found or empty")
-                return message
-            except FloodWait as e:
-                print(f"FloodWait in get_message: {e.value}s")
-                await asyncio.sleep(e.value)
-            except Exception as e:
-                print(f"Error getting message {message_id}: {e}")
-                raise FileNotFound(f"Message {message_id} not found") from e
-
-    async def stream_file(self, message_id: int, offset: int = 0, limit: int = 0) -> AsyncGenerator[bytes, None]:
-        message = await self.get_message(message_id)
-        
-        # Determine total size to calculate default limit if needed
-        media = getattr(message, 'document', None) or getattr(message, 'audio', None) or getattr(message, 'video', None)
-        file_size = getattr(media, 'file_size', 0)
-        
-        if limit <= 0:
-            limit = max(0, file_size - offset)
-            
-        remaining_bytes = limit
-        if remaining_bytes == 0:
-            return
-
-        # Assumption: Pyrogram uses 1MB chunks for stream_media offsets.
-        # This is generally true for standard MTProto file handling in Pyrogram.
-        chunk_size = 1024 * 1024 
-        
-        start_chunk_index = offset // chunk_size
-        bytes_to_skip = offset % chunk_size
-        
-        # Request enough chunks to cover the byte range
-        # (limit + skip) / chunk_size rounded up
-        chunks_needed = ((limit + bytes_to_skip) + chunk_size - 1) // chunk_size
-        
-        # Add buffer to chunks request just in case
-        async for chunk in self.app.stream_media(message, offset=start_chunk_index, limit=chunks_needed + 1):
-            if remaining_bytes <= 0:
-                break
-                
-            # Handle start trimming
-            if bytes_to_skip > 0:
-                if len(chunk) > bytes_to_skip:
-                    chunk = chunk[bytes_to_skip:]
-                    bytes_to_skip = 0
-                else:
-                    # Chunk is entirely within the skip region
-                    bytes_to_skip -= len(chunk)
-                    continue
-            
-            # Handle end trimming
-            if len(chunk) > remaining_bytes:
-                chunk = chunk[:remaining_bytes]
-            
-            if chunk:
-                # Optimized chunk size for Video Streaming (1MB)
-                # Removed inner loop to avoid unnecessary fragmentation and overhead
-                yield chunk
-                
-                remaining_bytes -= len(chunk)
 
     async def get_file_info(self, message_id: int) -> Dict[str, Any]:
-        """Returns size, name, mime for a given message ID."""
-        message = await self.get_message(message_id)
-        
-        media = getattr(message, 'document', None) or getattr(message, 'audio', None) or getattr(message, 'video', None)
-        if not media:
-             return {"error": "No media found in message"}
+        try:
+            message = await self.client.get_messages(self.bin_channel, ids=message_id)
+            if not message or not message.media:
+                raise FileNotFound("No media found")
+            
+            return {
+                "file_name": message.file.name or f"file_{message_id}",
+                "mime_type": message.file.mime_type or "application/octet-stream",
+                "file_size": message.file.size
+            }
+        except Exception as e:
+            print(f"Error get_file_info: {e}")
+            raise FileNotFound(f"Message {message_id} not found")
 
-        file_name = getattr(media, 'file_name', f"file_{message_id}")
-        mime_type = getattr(media, 'mime_type', 'application/octet-stream')
-        file_size = getattr(media, 'file_size', 0)
+    async def stream_file(self, message_id: int, offset: int = 0, limit: int = 0) -> AsyncGenerator[bytes, None]:
+        """
+        Load-Balanced Streamer.
         
-        return {
-            "file_name": file_name,
-            "mime_type": mime_type,
-            "file_size": file_size
-        }
+        Optimized for Client-Side Parallelism (e.g. Mobile Proxy).
+        Requests are distributed across the Worker Pool.
+        """
+        try:
+            # 1. Round-Robin / Random Worker Selection
+            # This balances the load when the client makes parallel requests.
+            import random
+            worker_idx = random.randint(0, self.pool_size - 1)
+            client = self.clients[worker_idx]
+            
+            # print(f"[STREAM] Request: Offset={offset}, Limit={limit} | Worker {worker_idx}")
+
+            # 2. Fetch Media (Worker Specific)
+            try:
+                message = await client.get_messages(self.bin_channel, ids=message_id)
+            except Exception as e:
+                print(f"[STREAM] Worker {worker_idx} failed metadata: {e}. Fallback to Worker 0.")
+                worker_idx = 0
+                client = self.clients[0]
+                message = await client.get_messages(self.bin_channel, ids=message_id)
+
+            if not message or not message.media:
+                raise FileNotFound(f"Message {message_id} not found")
+
+            # 3. Stream
+            chunk_size = 1024 * 1024  # 1MB
+            file_size = message.file.size
+            if limit <= 0:
+                limit = file_size - offset
+
+            remaining = limit
+            current_pos = offset
+            
+            async for chunk in client.iter_download(
+                message.media,
+                offset=current_pos,
+                limit=remaining,
+                chunk_size=chunk_size,
+                request_size=512 * 1024,
+            ):
+                if not chunk: break
+                yield chunk
+                remaining -= len(chunk)
+                current_pos += len(chunk)
+                if remaining <= 0: break
+
+        except Exception as e:
+            print(f"[STREAM ERROR] {e}")
+            raise
 
 tg_client = TelegramClientWrapper()

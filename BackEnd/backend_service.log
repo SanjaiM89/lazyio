@@ -1,0 +1,116 @@
+INFO:     Started server process [294121]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:63554 (Press CTRL+C to quit)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [294121]
+DEBUG: API_ID=33688695 BIN_CHANNEL=-1003261092648
+Telegram Client Started (Session Mode: Disk)
+[PeerCache] Loaded cached access_hash for channel 3261092648
+Resolved BIN_CHANNEL from cache: dump
+[AI] Starting hourly recommendations refresh...
+[AI] Using 2 liked songs for personalization
+[AI] Cached: 5 recs, playlist 'Tamil Thunder Anthems'
+[AI] Starting hourly recommendations refresh...
+[AI] Using 2 liked songs for personalization
+[AI] Cached: 5 recs, playlist 'Tamil Thunder'
+Error stopping Telegram Client: Task <Task pending name='Task-4' coro=<LifespanOn.main() running at /home/sanjai/Desktop/fun_projects/FileToLink/BackEnd/venv/lib/python3.13/site-packages/uvicorn/lifespan/on.py:86>> got Future <Task pending name='Task-12' coro=<Dispatcher.handler_worker() running at /home/sanjai/Desktop/fun_projects/FileToLink/BackEnd/venv/lib/python3.13/site-packages/pyrogram/dispatcher.py:202>> attached to a different loop
+INFO:     Will watch for changes in these directories: ['/home/sanjai/Desktop/fun_projects/FileToLink/BackEnd']
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO:     Started reloader process [318937] using WatchFiles
+DEBUG: API_ID=33688695 BIN_CHANNEL=-1003261092648
+INFO:     Started server process [318959]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'vpn_manager.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [318959]
+INFO:     Started server process [321015]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [321015]
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Started server process [321164]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [321164]
+INFO:     Started server process [321570]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [321570]
+INFO:     Started server process [321907]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [321907]
+INFO:     Started server process [322233]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'main.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [322233]
+INFO:     Started server process [322483]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [322483]
+INFO:     Started server process [322592]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [322592]
+INFO:     Started server process [323042]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'config.env'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [323042]
+INFO:     Started server process [323391]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [323391]
+INFO:     Stopping reloader process [318937]
+INFO:     Will watch for changes in these directories: ['/home/sanjai/Desktop/fun_projects/FileToLink/BackEnd']
+INFO:     Uvicorn running on http://0.0.0.0:63554 (Press CTRL+C to quit)
+INFO:     Started reloader process [323588] using WatchFiles
+DEBUG: API_ID=33688695 BIN_CHANNEL=-1003261092648
+INFO:     Started server process [323603]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [323603]
+INFO:     Stopping reloader process [323588]

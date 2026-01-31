@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 
-// Replace with your backend IP
-// For same WiFi: use local IP. For public: use tunnel but streaming has issues
-const String baseUrl = 'http://146.70.142.20:41007'; 
-const String wsUrl = 'ws://146.70.142.20:41007/ws';
+// App Configuration for Dynamic IP/Port
+class AppConfig {
+  // Config is loaded dynamically from SharedPreferences in main.dart
+  // Default domain is lazyio.duckdns.org, but PORT must be provided by user
+  static String baseUrl = ''; 
+  static String wsUrl = '';  
+}
+
+// Legacy accessors (getters to maintain compatibility where possible, but const usage must change)
+// Note: Files using `const baseUrl` will need to be updated to `AppConfig.baseUrl`
+// We remove the const declarations to force compile errors if they were used in const contexts.
 
 // Colors
 

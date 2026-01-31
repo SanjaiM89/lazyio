@@ -38,7 +38,7 @@ class _YouTubeScreenState extends State<YouTubeScreen> {
 
   void _connectWebSocket() {
     try {
-      _wsChannel = WebSocketChannel.connect(Uri.parse(wsUrl));
+      _wsChannel = WebSocketChannel.connect(Uri.parse(AppConfig.wsUrl));
       _wsSubscription = _wsChannel!.stream.listen((message) {
         try {
           final data = jsonDecode(message);

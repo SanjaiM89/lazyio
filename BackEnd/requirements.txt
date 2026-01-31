@@ -3,8 +3,9 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 aiohttp
-pyrogram
-tgcrypto
+aiohttp
+telethon
+cryptg
 mutagen
 shazamio
 httpx
@@ -12,3 +13,6 @@ jinja2
 motor
 dnspython
 yt-dlp
+essentia
+faiss-cpu
+numpy

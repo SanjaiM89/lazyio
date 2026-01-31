@@ -1,10 +1,47 @@
-import axios from 'axios';
+const ip = localStorage.getItem('backend_ip') || 'localhost';
+const port = localStorage.getItem('backend_port') || '8000';
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const getBaseUrl = () => {
+    let host = ip;
+    // Remove trailing slash if user added it
+    if (host.endsWith('/')) host = host.slice(0, -1);
+
+    // Check if protocol is missing
+    if (!host.startsWith('http://') && !host.startsWith('https://')) {
+        host = `http://${host}`; // Default to http for localhost/IPs
+    }
+
+    // Append port only if sensible:
+    // 1. Port is provided
+    // 2. Port is not standard 80/443 (implicit)
+    // 3. User didn't already include a port in the "IP" field (e.g. localhost:8000)
+    if (port && port !== '80' && port !== '443') {
+        const cleanHost = host.replace('https://', '').replace('http://', '');
+        if (!cleanHost.includes(':')) {
+            host = `${host}:${port}`;
+        }
+    }
+    return host;
+};
+
+const BASE_URL = getBaseUrl();
+const API_BASE_URL = `${BASE_URL}/api`;
+
+// WS Url needs to match protocol (http -> ws, https -> wss)
+export const getWsUrl = () => {
+    let url = BASE_URL;
+    if (url.startsWith('https://')) {
+        url = url.replace('https://', 'wss://');
+    } else {
+        url = url.replace('http://', 'ws://');
+    }
+    return `${url}/ws`;
+};
 
 const api = axios.create({
     baseURL: API_BASE_URL,
 });
+
 
 export const getSongs = async () => {
     const response = await api.get('/songs');
@@ -46,8 +83,15 @@ export const getRecommendations = async (currentSongId, historyIds) => {
     return response.data;
 };
 
+export const getSimilarSongs = async (songId, limit = 10) => {
+    const response = await api.get(`/recommend/similar/${songId}`, { params: { limit } });
+    return response.data;
+};
+
+
 // Helper for streaming URL
-export const getStreamUrl = (songId) => `${API_BASE_URL}/stream/${songId}`;
+export const getStreamUrl = (songId, quality = 'original') => `${API_BASE_URL}/stream/${songId}?quality=${quality}`;
+
 
 // ==================== YouTube API ====================
 
