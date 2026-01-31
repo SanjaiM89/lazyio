@@ -1,61 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import { getHomepage, refreshHomepage, getStreamUrl, recordPlay } from './api';
+import React, { useState } from 'react';
+import { refreshHomepage, recordPlay } from './api';
+import SongMenu from './SongMenu';
 
-const Home = ({ onPlaySong, onNavigate }) => {
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
+const Home = ({ data, onPlaySong, onNavigate, onRefresh, onOpenPlaylistModal }) => {
     const [refreshing, setRefreshing] = useState(false);
 
-    const loadData = async () => {
-        try {
-            const result = await getHomepage();
-            setData(result);
-        } catch (err) {
-            console.error('Failed to load homepage:', err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        loadData();
-
-        // WebSocket for live updates
-        const ws = new WebSocket('ws://localhost:8000/ws');
-
-        ws.onmessage = (event) => {
-            if (event.data === 'library_updated' || event.data === 'song_added') {
-                console.log('Home: Library update received, refreshing...');
-                loadData();
-            }
-        };
-
-        return () => {
-            ws.close();
-        };
-    }, []);
+    // Use passed data or show loading/empty state if waiting
+    const loading = !data;
 
     const handleRefresh = async () => {
         setRefreshing(true);
         try {
             await refreshHomepage();
-            // Wait a bit for background task to complete
-            setTimeout(loadData, 3000);
+            // Trigger parent refresh after delay for backend processing
+            setTimeout(() => {
+                onRefresh?.();
+                setRefreshing(false);
+            }, 3000);
         } catch (err) {
             console.error('Refresh failed:', err);
-        } finally {
-            setTimeout(() => setRefreshing(false), 3000);
+            setRefreshing(false);
         }
     };
 
-    const handlePlay = async (song) => {
-        try {
-            await recordPlay(song.id);
-            onPlaySong?.(song);
-        } catch (err) {
+    const handlePlay = (song) => {
+        // Optimize: Play immediately without waiting for recordPlay
+        onPlaySong?.(song);
+
+        // Record in background
+        recordPlay(song.id).catch(err => {
             console.error('Failed to record play:', err);
-            onPlaySong?.(song);
-        }
+        });
     };
 
     const formatDuration = (seconds) => {
@@ -79,8 +54,8 @@ const Home = ({ onPlaySong, onNavigate }) => {
                 {/* Header */}
                 <div className="flex justify-between items-center mb-8">
                     <div>
-                        <h1 className="text-3xl font-bold mb-2">Welcome Back</h1>
-                        <p className="text-white/50">Your personalized music experience</p>
+                        <h1 className="text-3xl font-bold mb-2 animate-fade-in">Welcome Back</h1>
+                        <p className="text-white/50 animate-fade-in" style={{ animationDelay: '0.1s' }}>Your personalized music experience</p>
                     </div>
                     <button
                         onClick={handleRefresh}
@@ -95,8 +70,8 @@ const Home = ({ onPlaySong, onNavigate }) => {
                 </div>
 
                 {/* Recently Played */}
-                {data?.recently_played?.length > 0 && (
-                    <section className="mb-10">
+                {data.recently_played?.length > 0 && (
+                    <section className="mb-10 animate-fade-in" style={{ animationDelay: '0.2s' }}>
                         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                             <span className="text-pink-500">⏱</span> Recently Played
                         </h2>
@@ -125,8 +100,8 @@ const Home = ({ onPlaySong, onNavigate }) => {
                 )}
 
                 {/* AI Playlist */}
-                {data?.ai_playlist?.songs?.length > 0 && (
-                    <section className="mb-10">
+                {data.ai_playlist?.songs?.length > 0 && (
+                    <section className="mb-10 animate-fade-in" style={{ animationDelay: '0.3s' }}>
                         <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                             <span className="text-purple-500">✨</span> {data.ai_playlist.name}
                             <span className="text-xs bg-gradient-to-r from-pink-500 to-purple-500 px-2 py-0.5 rounded-full">AI Generated</span>
@@ -152,6 +127,9 @@ const Home = ({ onPlaySong, onNavigate }) => {
                                         <p className="font-medium truncate">{song.title}</p>
                                         <p className="text-white/50 text-sm truncate">{song.artist}</p>
                                     </div>
+                                    <div className="opacity-0 group-hover:opacity-100 transition" onClick={e => e.stopPropagation()}>
+                                        <SongMenu song={song} onAddToPlaylist={onOpenPlaylistModal} />
+                                    </div>
                                     <span className="text-white/30 text-sm">{formatDuration(song.duration)}</span>
                                 </div>
                             ))}
@@ -159,89 +137,8 @@ const Home = ({ onPlaySong, onNavigate }) => {
                     </section>
                 )}
 
-                {/* Recommendations */}
-                {data?.recommendations?.length > 0 && (
-                    <section className="mb-10">
-                        <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                            <span className="text-green-500">🎵</span> Recommended for You
-                        </h2>
-                        <div className="glass rounded-2xl p-4">
-                            <p className="text-white/50 text-sm mb-3">Based on your library, you might also like:</p>
-                            <div className="flex flex-wrap gap-2">
-                                {data.recommendations.map((rec, idx) => (
-                                    <span
-                                        key={idx}
-                                        className="px-3 py-1.5 rounded-full bg-white/5 text-sm hover:bg-white/10 cursor-pointer transition"
-                                        onClick={() => onNavigate?.('youtube', rec)}
-                                    >
-                                        {rec}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    </section>
-                )}
-
-                {/* Quick Actions */}
-                <section>
-                    <h2 className="text-xl font-semibold mb-4">Quick Actions</h2>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <button
-                            onClick={() => onNavigate?.('youtube')}
-                            className="glass rounded-xl p-6 text-left hover:bg-white/10 transition"
-                        >
-                            <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814z" />
-                                </svg>
-                            </div>
-                            <p className="font-medium">YouTube Download</p>
-                            <p className="text-white/50 text-sm">Get audio from videos</p>
-                        </button>
-
-                        <button
-                            onClick={() => onNavigate?.('upload')}
-                            className="glass rounded-xl p-6 text-left hover:bg-white/10 transition"
-                        >
-                            <div className="w-12 h-12 rounded-xl bg-blue-500/20 flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                </svg>
-                            </div>
-                            <p className="font-medium">Upload Music</p>
-                            <p className="text-white/50 text-sm">Add from your device</p>
-                        </button>
-
-                        <button
-                            onClick={() => onNavigate?.('playlist')}
-                            className="glass rounded-xl p-6 text-left hover:bg-white/10 transition"
-                        >
-                            <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                                </svg>
-                            </div>
-                            <p className="font-medium">Your Library</p>
-                            <p className="text-white/50 text-sm">Browse all songs</p>
-                        </button>
-
-                        <button
-                            onClick={() => onNavigate?.('playlists')}
-                            className="glass rounded-xl p-6 text-left hover:bg-white/10 transition"
-                        >
-                            <div className="w-12 h-12 rounded-xl bg-green-500/20 flex items-center justify-center mb-3">
-                                <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                </svg>
-                            </div>
-                            <p className="font-medium">Playlists</p>
-                            <p className="text-white/50 text-sm">Create & manage</p>
-                        </button>
-                    </div>
-                </section>
-
                 {/* Last Updated */}
-                {data?.last_updated && (
+                {data.last_updated && (
                     <p className="text-center text-white/20 text-xs mt-10">
                         AI recommendations last updated: {new Date(data.last_updated).toLocaleString()}
                     </p>

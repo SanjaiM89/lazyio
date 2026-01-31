@@ -1,23 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { getSongs, recordPlay, getWsUrl } from './api';
+import { getSongs, recordPlay, getWsUrl, getHomepage } from './api';
 import Player from './Player';
 import Upload from './Upload';
 import YouTube from './YouTube';
 import Home from './Home';
+import Playlists from './Playlists';
+import AddToPlaylistModal from './AddToPlaylistModal';
+import SongMenu from './SongMenu';
 import SettingsModal from './SettingsModal';
 import SmartSearch from './SmartSearch';
 
 function App() {
   const [currentSong, setCurrentSong] = useState(null);
   const [songs, setSongs] = useState([]);
+  const [homepageData, setHomepageData] = useState(null);
   const [view, setView] = useState('home');
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [youtubeQuery, setYoutubeQuery] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Playlist Modal State
+  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
+  const [songForPlaylist, setSongForPlaylist] = useState(null);
+
   useEffect(() => {
     loadSongs();
+    loadHomepageData();
 
     // WebSocket for real-time updates
     const ws = new WebSocket(getWsUrl());
@@ -49,6 +58,17 @@ function App() {
     } catch (error) {
       console.error("Error loading songs:", error);
     } finally {
+      if (songs.length > 0) setLoading(false);
+    }
+  };
+
+  const loadHomepageData = async () => {
+    try {
+      const data = await getHomepage();
+      setHomepageData(data);
+    } catch (error) {
+      console.error("Error loading homepage:", error);
+    } finally {
       setLoading(false);
     }
   };
@@ -63,6 +83,12 @@ function App() {
     } catch (err) {
       console.error('Failed to record play:', err);
     }
+  };
+
+  // Open Playlist Modal
+  const handleAddToPlaylist = (song) => {
+    setSongForPlaylist(song);
+    setPlaylistModalOpen(true);
   };
 
   const handleNext = () => {
@@ -92,7 +118,8 @@ function App() {
   const navItems = [
     { id: 'home', label: 'Home', icon: '🏠' },
     { id: 'nowplaying', label: 'Now Playing' },
-    { id: 'playlist', label: 'Library' },
+    { id: 'playlist', label: 'Library' }, // Keeping ID 'playlist' for Library view legacy, but label is Library
+    { id: 'playlists', label: 'Playlists' }, // New Playlists view
     { id: 'youtube', label: 'YouTube', icon: '🎬' },
     { id: 'upload', label: 'Upload' },
   ];
@@ -143,9 +170,18 @@ function App() {
       {/* Main Content Area - Stacked for persistence */}
       <div className="flex-1 flex flex-col overflow-hidden relative">
         {/* Pages that can be unmounted */}
-        {view === 'home' && <Home onPlaySong={handlePlaySong} onNavigate={handleNavigate} />}
+        {view === 'home' && (
+          <Home
+            data={homepageData}
+            onPlaySong={handlePlaySong}
+            onNavigate={handleNavigate}
+            onRefresh={loadHomepageData}
+            onOpenPlaylistModal={handleAddToPlaylist}
+          />
+        )}
         {view === 'youtube' && <YouTube onDownloadComplete={handleUploadComplete} initialQuery={youtubeQuery} />}
         {view === 'upload' && <Upload onUploadComplete={handleUploadComplete} />}
+        {view === 'playlists' && <Playlists onPlaySong={handlePlaySong} onNavigate={handleNavigate} onOpenPlaylistModal={handleAddToPlaylist} />}
 
         {view === 'playlist' && (
           <div className="h-full flex-1 overflow-y-auto p-8">
@@ -172,7 +208,7 @@ function App() {
                   {songs.map((song, index) => (
                     <div
                       key={song.id}
-                      className={`song-item flex items-center gap-4 p-4 rounded-xl cursor-pointer animate-fade-in
+                      className={`group song-item flex items-center gap-4 p-4 rounded-xl cursor-pointer animate-fade-in
                         ${currentSong?.id === song.id ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5'}`}
                       style={{ animationDelay: `${index * 0.05}s` }}
                       onClick={() => handlePlaySong(song)}
@@ -194,6 +230,12 @@ function App() {
                         <p className="font-semibold truncate">{song.title || "Unknown"}</p>
                         <p className="text-sm text-white/50 truncate">{song.artist || "Unknown Artist"}</p>
                       </div>
+
+                      {/* Song Menu - visible on hover */}
+                      <div className="opacity-0 group-hover:opacity-100 transition mr-2" onClick={e => e.stopPropagation()}>
+                        <SongMenu song={song} onAddToPlaylist={handleAddToPlaylist} />
+                      </div>
+
                       <span className="text-sm text-white/40">{song.album || ""}</span>
                       <span className="text-sm text-white/40 w-16 text-right">
                         {song.duration ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, '0')}` : "—"}
@@ -206,29 +248,27 @@ function App() {
           </div>
         )}
 
-        {/* Now Playing - full page view with vinyl art and queue */}
-        {view === 'nowplaying' && (
-          <Player
-            currentSong={currentSong}
-            onNext={handleNext}
-            onPrev={handlePrev}
-            playlist={songs}
-            onSelectSong={handlePlaySong}
-            fullView={true}
-          />
-        )}
+        {/* Now Playing - handled by persistent player */}
       </div>
 
-      {/* Persistent Player Bar - Always visible at bottom */}
+      {/* Persistent Player - Handles both Mini and Full views */}
       <Player
         currentSong={currentSong}
         onNext={handleNext}
         onPrev={handlePrev}
         playlist={songs}
         onSelectSong={handlePlaySong}
-        miniBar={true}
+        fullView={view === 'nowplaying'}
+        onToggleView={() => setView(v => v === 'nowplaying' ? 'home' : 'nowplaying')}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* Global Modals */}
+      <AddToPlaylistModal
+        isOpen={playlistModalOpen}
+        onClose={() => setPlaylistModalOpen(false)}
+        song={songForPlaylist}
+      />
     </div>
   );
 }
