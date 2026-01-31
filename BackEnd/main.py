@@ -1187,7 +1187,38 @@ async def get_youtube_formats_endpoint(request: YouTubePreviewRequest):
         return {"status": "success", "formats": formats}
     except Exception as e:
         print(f"[VidsSave] Format fetch error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        # raise HTTPException(status_code=400, detail=str(e))
+        return {"status": "success", "formats": []}
+
+@app.post("/api/youtube/preview")
+async def youtube_preview(request: YouTubePreviewRequest):
+    """Get video preview info using yt-dlp (Rich Metadata)"""
+    try:
+        info = await youtube_downloader.get_video_info(request.url)
+        return {
+            "status": "success",
+            "title": info["title"],
+            "artist": info["artist"],
+            "thumbnail": info["thumbnail"],
+            "duration": info["duration"],
+            "description": info.get("description", ""),
+            "channel": info.get("channel", "")
+        }
+    except Exception as e:
+        print(f"[YouTube] Preview error: {e}")
+        # Fallback to VidsSave if yt-dlp fails
+        try:
+            print("[YouTube] Falling back to VidsSave for metadata...")
+            info = await vidssave_downloader.get_video_info(request.url)
+            return {
+                "status": "success",
+                "title": info["title"],
+                "artist": info["artist"],
+                "thumbnail": info["thumbnail"],
+                "duration": info["duration"]
+            }
+        except Exception as ve:
+            raise HTTPException(status_code=400, detail=f"Metadata fetch failed: {str(e)} -> {str(ve)}")
 
 
 # ==================== VidsSave YouTube Download API (Alternative) ====================
@@ -1233,6 +1264,24 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
     async def process_vidssave_download(task_id: str, url: str):
         """Background task to handle VidsSave download"""
         try:
+            # Step 0: Fetch Rich Metadata (Title, Artist, Thumbnail) using yt-dlp logic
+            # We do this first to ensure we have good metadata even if VidsSave's is poor
+            from youtube_downloader import youtube_downloader
+            rich_metadata = {}
+            try:
+                print(f"[VidsSave] Fetching rich metadata for {url}")
+                rich_metadata = await youtube_downloader.get_video_info(url)
+            except Exception as e:
+                print(f"[VidsSave] Rich metadata fetch failed, using VidsSave fallback: {e}")
+
+            # Notify start
+            await notify_update("youtube_progress", {
+                "task_id": task_id,
+                "status": "downloading",
+                "progress": 10,
+                "message": "Downloading from VidsSave..."
+            })
+
             task = await vidssave_downloader.download_and_convert(
                 url=url,
                 task_id=task_id,
@@ -1240,6 +1289,12 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
             )
             
             if task.status == VidsSaveDownloadStatus.COMPLETE and task.file_path:
+                # Merge metadata: Prefer rich_metadata, fallback to task (VidsSave)
+                final_title = rich_metadata.get("title") or task.title
+                final_artist = rich_metadata.get("artist") or task.artist
+                final_thumbnail = rich_metadata.get("thumbnail") or task.thumbnail
+                final_duration = rich_metadata.get("duration") or task.duration
+
                 # Upload to Telegram
                 await notify_update("youtube_progress", {
                     "task_id": task_id,
@@ -1250,19 +1305,23 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
                 
                 tg_msg = await tg_client.upload_file(
                     task.file_path,
-                    title=task.title,
-                    artist=task.artist,
-                    duration=task.duration,
-                    thumbnail=task.thumbnail
+                    title=final_title,
+                    artist=final_artist,
+                    duration=final_duration,
+                    thumbnail=final_thumbnail
                 )
                 if tg_msg:
                     # Save to database
-                    from database import add_song
-                    await add_song(
+                    from database import add_song, update_song_video
+                    
+                    # CAPTURE THE SONG ID!
+                    song_id = await add_song(
                         telegram_file_id=str(tg_msg.id),
                         audio_telegram_id=str(tg_msg.id),
-                        title=task.title,
-                        artist=task.artist,
+                        title=final_title,
+                        artist=final_artist,
+                        duration=final_duration,
+                        thumbnail=final_thumbnail,
                         file_name=os.path.basename(task.file_path),
                         file_size=os.path.getsize(task.file_path) if task.file_path else 0
                     )
@@ -1278,13 +1337,13 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
                         
                         video_msg = await tg_client.upload_file(
                             task.video_path,
-                            title=task.title,
-                            artist=task.artist,
-                            duration=task.duration,
-                            thumbnail=task.thumbnail
+                            title=final_title,
+                            artist=final_artist,
+                            duration=final_duration,
+                            thumbnail=final_thumbnail
                         )
                         if video_msg:
-                            from database import update_song_video
+                            # Use the captured song_id
                             await update_song_video(song_id, str(video_msg.id))
                     
                     await notify_update("youtube_progress", {
@@ -1307,6 +1366,8 @@ async def vidssave_download(background_tasks: BackgroundTasks, request: YouTubeR
                     })
         except Exception as e:
             print(f"[VidsSave] Background task error: {e}")
+            import traceback
+            traceback.print_exc()
             await notify_update("youtube_progress", {
                 "task_id": task_id,
                 "status": "failed",

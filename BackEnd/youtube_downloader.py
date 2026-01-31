@@ -361,6 +361,7 @@ class YouTubeDownloader:
             "view_count": info.get("view_count", 0),
             "channel": info.get("channel", ""),
             "video_id": info.get("id", ""),
+            "description": info.get("description", "")
         }
     async def get_formats(self, url: str) -> list:
         """Get available formats for a video"""
