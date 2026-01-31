@@ -585,7 +585,7 @@ class YouTubeDownloader:
             opts = {
                 # Use format 140 (m4a 128k) first, fallback to any audio, then any format
                 # Format 140 was confirmed working in local tests
-                "format": "140/m4a/bestaudio/best",
+                "format": "bestaudio/best",
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
@@ -624,6 +624,12 @@ class YouTubeDownloader:
                 "http_headers": {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9",
+                },
+                # Force Android client to bypass JS/SABR issues
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android", "ios"]
+                    }
                 },
             }
             
