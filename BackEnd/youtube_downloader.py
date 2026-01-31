@@ -165,9 +165,12 @@ class YouTubeDownloader:
         }
         
         
-        # Use live browser cookies (more reliable than static file)
-        ydl_opts["cookiesfrombrowser"] = ("chrome",)
-        print(f"[YT] Using live cookies from Chrome browser for playlist")
+        # Use cookies file if it exists (for deployed servers)
+        if os.path.exists(COOKIES_FILE):
+            ydl_opts["cookiefile"] = COOKIES_FILE
+            print(f"[YT] Using cookies file: {COOKIES_FILE}")
+        else:
+            print(f"[YT] No cookies file found. YouTube may block some requests.")
         
         with YoutubeDL(ydl_opts) as ydl:
             try:
@@ -203,9 +206,12 @@ class YouTubeDownloader:
             "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
         }
         
-        # Use live browser cookies (more reliable than static file)
-        opts["cookiesfrombrowser"] = ("chrome",)
-        print(f"[YT] Using live cookies from Chrome browser")
+        # Use cookies file if it exists (for deployed servers)
+        if os.path.exists(COOKIES_FILE):
+            opts["cookiefile"] = COOKIES_FILE
+            print(f"[YT] Using cookies file")
+        else:
+            print(f"[YT] No cookies file - YouTube may block some requests")
         
         def _extract():
             with YoutubeDL(opts) as ydl:
@@ -393,9 +399,10 @@ class YouTubeDownloader:
                 },
             }
             
-            # Use live browser cookies (more reliable than static file)
-            opts["cookiesfrombrowser"] = ("chrome",)
-            print(f"[YT] Using live cookies from Chrome browser")
+            # Use cookies file if it exists (for deployed servers)
+            if os.path.exists(COOKIES_FILE):
+                opts["cookiefile"] = COOKIES_FILE
+                print(f"[YT] Using cookies file for video")
             
             # Download in thread pool
             def _download():
@@ -534,9 +541,10 @@ class YouTubeDownloader:
                 },
             }
             
-            # Use live browser cookies (more reliable than static file)
-            opts["cookiesfrombrowser"] = ("chrome",)
-            print(f"[YT] Using live cookies from Chrome browser")
+            # Use cookies file if it exists (for deployed servers)
+            if os.path.exists(COOKIES_FILE):
+                opts["cookiefile"] = COOKIES_FILE
+                print(f"[YT] Using cookies file for audio")
             
             # Download in thread pool
             def _download():

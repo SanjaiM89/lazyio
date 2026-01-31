@@ -217,6 +217,68 @@ async def update_port(request: PortUpdateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== YouTube Cookies Upload ====================
+
+@app.post("/api/settings/cookies")
+async def upload_cookies(file: UploadFile = File(...)):
+    """
+    Upload a cookies.txt file for YouTube downloads.
+    This file should be exported from browser using extensions like 'Get cookies.txt LOCALLY'.
+    """
+    from youtube_downloader import COOKIES_FILE
+    
+    if not file.filename.endswith('.txt'):
+        raise HTTPException(status_code=400, detail="File must be a .txt file")
+    
+    try:
+        # Save the uploaded cookies file
+        with open(COOKIES_FILE, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # Verify it's a valid Netscape cookies format (basic check)
+        with open(COOKIES_FILE, "r") as f:
+            first_line = f.readline()
+            if "Netscape" not in first_line and not first_line.startswith("#"):
+                # Still valid if it starts with domain entries
+                if not first_line.startswith("."):
+                    os.remove(COOKIES_FILE)
+                    raise HTTPException(status_code=400, detail="Invalid cookies.txt format. Use Netscape format.")
+        
+        return {"success": True, "message": "Cookies uploaded successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/settings/cookies")
+async def get_cookies_status():
+    """Check if cookies.txt file exists on server"""
+    from youtube_downloader import COOKIES_FILE
+    
+    if os.path.exists(COOKIES_FILE):
+        file_size = os.path.getsize(COOKIES_FILE)
+        mod_time = os.path.getmtime(COOKIES_FILE)
+        from datetime import datetime
+        return {
+            "exists": True,
+            "size": file_size,
+            "updated_at": datetime.fromtimestamp(mod_time).isoformat()
+        }
+    return {"exists": False}
+
+
+@app.delete("/api/settings/cookies")
+async def delete_cookies():
+    """Delete the cookies.txt file"""
+    from youtube_downloader import COOKIES_FILE
+    
+    if os.path.exists(COOKIES_FILE):
+        os.remove(COOKIES_FILE)
+        return {"success": True, "message": "Cookies file deleted"}
+    return {"success": False, "message": "No cookies file found"}
+
+
 @app.post("/api/upload")
 async def upload_files(files: list[UploadFile] = File(...)):
     """
