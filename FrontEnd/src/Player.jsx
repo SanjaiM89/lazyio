@@ -1,16 +1,28 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { getStreamUrl } from './api';
+import { getStreamUrl, getVideoStreamUrl } from './api';
 
 const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, miniBar = false, fullView = false }) => {
     const audioRef = useRef(null);
+    const videoRef = useRef(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(0.8);
     const [showVolume, setShowVolume] = useState(false);
 
+    // Unified player: 'audio' or 'video' mode
+    const [mode, setMode] = useState('audio');
+    const [videoLoading, setVideoLoading] = useState(false);
+    const [videoError, setVideoError] = useState(null);
+
+    // Check if current song has video
+    const hasVideo = currentSong?.hasVideo || currentSong?.has_video;
+
     useEffect(() => {
         if (currentSong && audioRef.current) {
+            // Reset to audio mode when song changes
+            setMode('audio');
+            setVideoError(null);
             audioRef.current.play().catch(e => console.error("Play error:", e));
             setIsPlaying(true);
         }
@@ -20,30 +32,45 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
         if (audioRef.current) {
             audioRef.current.volume = volume;
         }
+        if (videoRef.current) {
+            videoRef.current.volume = volume;
+        }
     }, [volume]);
 
+    // Sync video with mode changes
+    useEffect(() => {
+        if (mode === 'video' && currentSong && hasVideo) {
+            setVideoLoading(true);
+            setVideoError(null);
+            // Video will auto-load, we handle events
+        }
+    }, [mode, currentSong, hasVideo]);
+
     const togglePlay = () => {
-        if (audioRef.current) {
+        const media = mode === 'video' ? videoRef.current : audioRef.current;
+        if (media) {
             if (isPlaying) {
-                audioRef.current.pause();
+                media.pause();
             } else {
-                audioRef.current.play();
+                media.play();
             }
             setIsPlaying(!isPlaying);
         }
     };
 
     const handleTimeUpdate = () => {
-        if (audioRef.current) {
-            setProgress(audioRef.current.currentTime);
-            setDuration(audioRef.current.duration || 0);
+        const media = mode === 'video' ? videoRef.current : audioRef.current;
+        if (media) {
+            setProgress(media.currentTime);
+            setDuration(media.duration || 0);
         }
     };
 
     const handleSeek = (e) => {
         const time = parseFloat(e.target.value);
-        if (audioRef.current) {
-            audioRef.current.currentTime = time;
+        const media = mode === 'video' ? videoRef.current : audioRef.current;
+        if (media) {
+            media.currentTime = time;
             setProgress(time);
         }
     };
@@ -55,7 +82,86 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
+    // Switch between audio and video modes
+    const switchMode = (newMode) => {
+        if (newMode === mode) return;
+
+        const currentTime = mode === 'video'
+            ? videoRef.current?.currentTime || 0
+            : audioRef.current?.currentTime || 0;
+
+        if (newMode === 'video') {
+            // Pause audio, switch to video
+            if (audioRef.current) {
+                audioRef.current.pause();
+            }
+            setMode('video');
+            // Video element will seek after loading
+            setTimeout(() => {
+                if (videoRef.current) {
+                    videoRef.current.currentTime = currentTime;
+                    videoRef.current.play().catch(e => console.error("Video play error:", e));
+                    setIsPlaying(true);
+                }
+            }, 100);
+        } else {
+            // Pause video, switch to audio
+            if (videoRef.current) {
+                videoRef.current.pause();
+            }
+            setMode('audio');
+            // Resume audio at saved position
+            setTimeout(() => {
+                if (audioRef.current) {
+                    audioRef.current.currentTime = currentTime;
+                    audioRef.current.play().catch(e => console.error("Audio play error:", e));
+                    setIsPlaying(true);
+                }
+            }, 100);
+        }
+    };
+
+    const handleVideoLoaded = () => {
+        setVideoLoading(false);
+        if (videoRef.current && isPlaying) {
+            videoRef.current.play().catch(e => console.error("Video play error:", e));
+        }
+    };
+
+    const handleVideoError = (e) => {
+        console.error("Video error:", e);
+        setVideoLoading(false);
+        setVideoError("Video unavailable. Try audio mode.");
+    };
+
     const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
+
+    // Song/Video Toggle Component
+    const ModeToggle = ({ className = "" }) => {
+        if (!hasVideo) return null;
+        return (
+            <div className={`flex bg-white/10 rounded-full p-1 ${className}`}>
+                <button
+                    onClick={() => switchMode('audio')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${mode === 'audio'
+                            ? 'bg-white text-black'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                >
+                    Song
+                </button>
+                <button
+                    onClick={() => switchMode('video')}
+                    className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${mode === 'video'
+                            ? 'bg-white text-black'
+                            : 'text-white/70 hover:text-white'
+                        }`}
+                >
+                    Video
+                </button>
+            </div>
+        );
+    };
 
     // Mini bar mode - just the bottom player controls
     if (miniBar) {
@@ -67,10 +173,14 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                     <div className="flex items-center gap-4 w-64 flex-shrink-0">
                         {currentSong ? (
                             <>
-                                <div className={`w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center ${isPlaying ? 'animate-spin-slow' : ''}`}>
-                                    <svg className="w-7 h-7 text-white/60" fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                                    </svg>
+                                <div className={`w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center overflow-hidden ${isPlaying ? 'animate-spin-slow' : ''}`}>
+                                    {currentSong.cover_art || currentSong.thumbnail ? (
+                                        <img src={currentSong.cover_art || currentSong.thumbnail} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <svg className="w-7 h-7 text-white/60" fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                        </svg>
+                                    )}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <p className="font-semibold truncate text-sm">{currentSong.title}</p>
@@ -172,9 +282,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
     // Full view mode - the complete Now Playing page
     return (
         <>
-            {/* Main Content Area with Visualizer */}
+            {/* Main Content Area */}
             <div className="flex-1 flex">
-                {/* Main Now Playing Area - Content Centered */}
+                {/* Main Now Playing Area */}
                 <div className="flex-1 flex flex-col items-center justify-center pb-8 relative overflow-hidden">
                     {/* Background blur from album art */}
                     <div
@@ -186,30 +296,70 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                         }}
                     />
 
-                    {/* Album Art */}
-                    <div className={`relative z-10 mb-6 ${isPlaying ? 'animate-spin-slow' : ''}`}>
-                        <div className="w-44 h-44 rounded-full bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center shadow-2xl shadow-pink-500/20 border-4 border-white/10">
-                            {currentSong?.cover_art ? (
-                                <img
-                                    src={currentSong.cover_art}
-                                    alt="Album Art"
-                                    className="w-full h-full rounded-full object-cover"
-                                />
-                            ) : (
-                                <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
-                                    <svg className={`w-16 h-16 text-pink-500/60 ${!currentSong ? 'animate-pulse' : ''}`} fill="currentColor" viewBox="0 0 24 24">
-                                        <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                                    </svg>
+                    {/* Song/Video Toggle */}
+                    <ModeToggle className="z-20 mb-6" />
+
+                    {/* Content Area - Video or Album Art */}
+                    {mode === 'video' && hasVideo ? (
+                        <div className="relative z-10 mb-6 w-full max-w-2xl aspect-video rounded-xl overflow-hidden bg-black/50">
+                            {videoLoading && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-12 h-12 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
                                 </div>
                             )}
+                            {videoError ? (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center text-white/70">
+                                    <svg className="w-12 h-12 mb-2 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                    <p>{videoError}</p>
+                                    <button
+                                        onClick={() => switchMode('audio')}
+                                        className="mt-3 px-4 py-2 bg-pink-500 rounded-lg text-sm"
+                                    >
+                                        Switch to Audio
+                                    </button>
+                                </div>
+                            ) : (
+                                <video
+                                    ref={videoRef}
+                                    src={currentSong ? getVideoStreamUrl(currentSong.id) : undefined}
+                                    className="w-full h-full object-contain"
+                                    onTimeUpdate={handleTimeUpdate}
+                                    onEnded={onNext}
+                                    onLoadedMetadata={handleVideoLoaded}
+                                    onError={handleVideoError}
+                                    controls={false}
+                                    playsInline
+                                />
+                            )}
                         </div>
-                        {/* Vinyl record inner ring */}
-                        <div className="absolute inset-0 rounded-full border-4 border-white/5 pointer-events-none" />
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 border-2 border-white/10 pointer-events-none" />
-                    </div>
+                    ) : (
+                        /* Album Art (Audio Mode) */
+                        <div className={`relative z-10 mb-6 ${isPlaying ? 'animate-spin-slow' : ''}`}>
+                            <div className="w-44 h-44 rounded-full bg-gradient-to-br from-pink-500/30 to-purple-600/30 flex items-center justify-center shadow-2xl shadow-pink-500/20 border-4 border-white/10">
+                                {currentSong?.cover_art ? (
+                                    <img
+                                        src={currentSong.cover_art}
+                                        alt="Album Art"
+                                        className="w-full h-full rounded-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="w-full h-full rounded-full bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
+                                        <svg className={`w-16 h-16 text-pink-500/60 ${!currentSong ? 'animate-pulse' : ''}`} fill="currentColor" viewBox="0 0 24 24">
+                                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                                        </svg>
+                                    </div>
+                                )}
+                            </div>
+                            {/* Vinyl record inner ring */}
+                            <div className="absolute inset-0 rounded-full border-4 border-white/5 pointer-events-none" />
+                            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/80 border-2 border-white/10 pointer-events-none" />
+                        </div>
+                    )}
 
-                    {/* Visualizer */}
-                    {isPlaying && currentSong && (
+                    {/* Visualizer (Audio mode only) */}
+                    {mode === 'audio' && isPlaying && currentSong && (
                         <div className="flex items-end justify-center gap-1 h-12 mb-4 z-10">
                             {[...Array(25)].map((_, i) => (
                                 <div
@@ -229,21 +379,6 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                         <div className="text-center z-10 animate-fade-in">
                             <h1 className="text-2xl font-bold mb-1 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">{currentSong.title || "Unknown Title"}</h1>
                             <p className="text-base text-white/60">{currentSong.artist || "Unknown Artist"}</p>
-                            <button
-                                onClick={() => {
-                                    // Trigger find similar - needs to be passed down or handled here
-                                    // For now just console log or simple alert as we need to hook it to playlist update
-                                    if (onSelectSong) {
-                                        // Quick hack: onSelectSong could interpret a special event?
-                                        // Ideally we need a prop onFindSimilar
-                                        alert("Finding similar songs...");
-                                    }
-                                }}
-                                className="mt-4 px-4 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs text-white/70 transition flex items-center gap-2 mx-auto"
-                            >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"></path></svg>
-                                Find Similar
-                            </button>
                         </div>
                     ) : (
                         <div className="text-center z-10">
@@ -251,6 +386,57 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                             <p className="text-white/30 text-sm">Click a song from the queue to start →</p>
                         </div>
                     )}
+
+                    {/* Progress Bar & Controls */}
+                    <div className="w-full max-w-md px-8 mt-6 z-10">
+                        <div className="flex items-center gap-3 mb-4">
+                            <span className="text-xs text-white/40 w-10 text-right">{formatTime(progress)}</span>
+                            <div className="flex-1 relative h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                <div
+                                    className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-pink-400 rounded-full transition-all"
+                                    style={{ width: `${progressPercent}%` }}
+                                />
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={duration || 100}
+                                    value={progress}
+                                    onChange={handleSeek}
+                                    className="absolute inset-0 w-full opacity-0 cursor-pointer"
+                                />
+                            </div>
+                            <span className="text-xs text-white/40 w-10">{formatTime(duration)}</span>
+                        </div>
+
+                        {/* Playback Controls */}
+                        <div className="flex items-center justify-center gap-6">
+                            <button onClick={onPrev} className="control-btn control-btn-secondary w-12 h-12">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" />
+                                </svg>
+                            </button>
+                            <button
+                                onClick={togglePlay}
+                                className="control-btn control-btn-primary w-16 h-16"
+                                disabled={!currentSong}
+                            >
+                                {isPlaying ? (
+                                    <svg className="w-7 h-7" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-7 h-7 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                                        <path d="M8 5v14l11-7z" />
+                                    </svg>
+                                )}
+                            </button>
+                            <button onClick={onNext} className="control-btn control-btn-secondary w-12 h-12">
+                                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 {/* Right Sidebar - Playlist */}
@@ -296,10 +482,18 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, mini
                     </div>
                 </div>
             </div>
+
+            {/* Hidden audio element (always present for audio mode) */}
+            <audio
+                ref={audioRef}
+                src={currentSong ? getStreamUrl(currentSong.id) : undefined}
+                onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
+                onEnded={onNext}
+                onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+                style={{ display: 'none' }}
+            />
         </>
     );
 };
 
 export default Player;
-
-

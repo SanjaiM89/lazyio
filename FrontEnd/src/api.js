@@ -110,6 +110,9 @@ export const getSimilarSongs = async (songId, limit = 10) => {
 // Helper for streaming URL
 export const getStreamUrl = (songId, quality = 'original') => `${API_BASE_URL}/stream/${songId}?quality=${quality}`;
 
+// Helper for video streaming URL
+export const getVideoStreamUrl = (songId) => `${API_BASE_URL}/stream/${songId}?type=video`;
+
 
 // ==================== YouTube API ====================
 

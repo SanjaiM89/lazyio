@@ -102,9 +102,12 @@ function App() {
       {/* Top Navigation */}
       <nav className="glass-dark border-b border-white/5 px-8 py-4 flex items-center justify-between z-50">
         <div className="flex items-center gap-8">
-          <span className="text-2xl font-bold bg-gradient-to-r from-pink-500 to-pink-400 bg-clip-text text-transparent">
-            mPlay
-          </span>
+          <div className="flex items-center gap-3">
+            <img src="/favicon.png" alt="Lazyio" className="w-8 h-8 rounded-lg" />
+            <span className="text-xl font-bold bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
+              Lazyio
+            </span>
+          </div>
           <div className="flex items-center gap-6">
             {navItems.map(item => (
               <button
