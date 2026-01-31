@@ -166,9 +166,17 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         while True:
+            # Keep connection alive by waiting for messages (even if we ignore them)
+            # This prevents the handler from exiting and closing the socket
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+    except Exception as e:
+        print(f"WebSocket error: {e}")
+        try:
+            manager.disconnect(websocket)
+        except:
+            pass
 
 # Helper to notify clients
 async def notify_update(event_type: str = "song_added", data: dict = None):
@@ -1409,11 +1417,60 @@ async def youtube_status(task_id: str):
 
 
 @app.get("/api/youtube/tasks")
+@app.get("/api/youtube/tasks")
 async def list_youtube_tasks(page: int = 1, limit: int = 10):
     """
     List all YouTube download tasks with pagination.
+    Merges in-memory VidsSave tasks with persisted DB tasks.
     """
-    return await get_youtube_tasks(page=page, limit=limit)
+    import dataclasses
+    
+    # 1. Get in-memory tasks (VidsSave)
+    # These are the most up-to-date for currently running downloads
+    in_memory_tasks = []
+    try:
+        from vidssave_downloader import get_all_tasks
+        # Convert dataclasses to dicts immediately to avoid type mismatch issues
+        in_memory_tasks = [dataclasses.asdict(t) for t in get_all_tasks()]
+        # Enum to string conversion (for status)
+        for t in in_memory_tasks:
+            if "status" in t and hasattr(t["status"], "value"):
+                t["status"] = t["status"].value
+    except ImportError:
+        pass
+    
+    # 2. Get persisted tasks from DB
+    db_result = await get_youtube_tasks(page=page, limit=limit)
+    db_tasks = db_result.get("tasks", [])
+    
+    # 3. Merge: Active in-memory tasks override DB tasks with same ID
+    # Normalize DB tasks to dicts if they aren't already
+    merged_map = {}
+    for t in db_tasks:
+        t_dict = t if isinstance(t, dict) else t.dict()
+        merged_map[t_dict["task_id"]] = t_dict
+    
+    # Add/Override with in-memory tasks
+    for task in in_memory_tasks:
+        merged_map[task["task_id"]] = task
+        
+    final_tasks = list(merged_map.values())
+    
+    # Sort: put active/pending tasks first, then by date?
+    # For now, simplistic sort: In-memory/active ones usually have 'progress' < 100 or status not 'complete'
+    # But for a stable list, maybe just reverse order (assuming newer tasks are at end or start of map)
+    # The map insertion order is preserved in Python 3.7+
+    
+    # Pagination total might be slightly off if we merged new in-memory tasks not in DB
+    # Recalculate basic total
+    total_count = len(final_tasks) if len(final_tasks) > db_result.get("total", 0) else db_result.get("total", 0)
+
+    return {
+        "tasks": final_tasks,
+        "page": page,
+        "pages": db_result.get("pages", 1),
+        "total": total_count
+    }
 
 
 @app.delete("/api/youtube/tasks")

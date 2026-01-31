@@ -66,6 +66,7 @@ class VidsSaveDownloader:
     
     def __init__(self):
         self._cancelled_tasks: set = set()
+        self._conversion_sem = asyncio.Semaphore(1)  # Limit concurrent conversions to 1
         print("[VidsSave] VidsSave-based downloader initialized")
     
     def is_youtube_url(self, url: str) -> bool:
@@ -291,31 +292,37 @@ class VidsSaveDownloader:
             task.video_path = video_path
             
             # Stage 3: Convert to audio using FFmpeg
-            task.status = VidsSaveDownloadStatus.CONVERTING
-            task.progress = 80
-            if broadcast_callback:
-                await broadcast_callback("youtube_progress", {
-                    "task_id": task_id,
-                    "status": "converting",
-                    "progress": 80,
-                    "message": "Converting to audio..."
-                })
-            
-            def _convert_to_audio():
-                cmd = [
-                    "ffmpeg", "-i", video_path,
-                    "-vn",  # No video
-                    "-acodec", "libmp3lame",
-                    "-ab", "320k",  # High quality
-                    "-ar", "44100",
-                    "-y",  # Overwrite
-                    audio_path
-                ]
-                subprocess.run(cmd, check=True, capture_output=True)
-                # Video file is kept for uploading
-                return audio_path
-            
-            await loop.run_in_executor(None, _convert_to_audio)
+            async with self._conversion_sem:
+                task.status = VidsSaveDownloadStatus.CONVERTING
+                task.progress = 80
+                if broadcast_callback:
+                    await broadcast_callback("youtube_progress", {
+                        "task_id": task_id,
+                        "status": "converting",
+                        "progress": 80,
+                        "message": "Converting to audio..."
+                    })
+                
+                def _convert_to_audio():
+                    cmd = [
+                        "ffmpeg", "-i", video_path,
+                        "-vn",  # No video
+                        "-acodec", "libmp3lame",
+                        "-ab", "320k",  # High quality
+                        "-ar", "44100",
+                        "-y",  # Overwrite
+                        audio_path
+                    ]
+                    subprocess.run(cmd, check=True, capture_output=True)
+                    return audio_path
+                
+                try:
+                    await loop.run_in_executor(None, _convert_to_audio)
+                except subprocess.CalledProcessError as e:
+                    error_msg = e.stderr.decode() if e.stderr else str(e)
+                    print(f"[VidsSave] FFmpeg Error: {error_msg}")
+                    # Re-raise with detail
+                    raise Exception(f"Conversion failed (Exit {e.returncode}): {error_msg[-200:]}")
             
             # Done!
             task.status = VidsSaveDownloadStatus.COMPLETE
@@ -356,9 +363,15 @@ class VidsSaveDownloader:
             _vidssave_tasks[task_id].status = VidsSaveDownloadStatus.CANCELLED
 
 
+
 def get_vidssave_task(task_id: str) -> Optional[VidsSaveDownloadTask]:
     """Get a VidsSave download task by ID"""
     return _vidssave_tasks.get(task_id)
+
+
+def get_all_tasks() -> list[VidsSaveDownloadTask]:
+    """Get all VidsSave download tasks"""
+    return list(_vidssave_tasks.values())
 
 
 # Global instance
