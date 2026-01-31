@@ -202,7 +202,7 @@ class YouTubeDownloader:
         opts = {
             "quiet": True,
             "no_warnings": True,
-            "extract_flat": False,
+            "extract_flat": True, # Optimized: Fetch metadata only, no format resolution
             # "format": "best", # REMOVED: Don't restrict format for metadata only
             "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
         }

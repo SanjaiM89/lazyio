@@ -229,22 +229,16 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     // Render Full View
     if (fullView) {
         return (
-            <div className="fixed inset-0 z-50 bg-[#0f0f13] flex flex-col">
-                {/* Top Bar with Back Button */}
-                <div className="absolute top-6 left-6 z-30">
-                    <button onClick={onToggleView} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition">
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                    </button>
-                </div>
+            <div className="fixed inset-0 z-40 bg-[#0f0f13] flex flex-col pt-20">
+                {/* Background Blur */}
+                <div
+                    className="absolute inset-0 bg-cover bg-center opacity-30 blur-3xl scale-150 pointer-events-none"
+                    style={{ backgroundImage: currentSong?.cover_art ? `url(${currentSong.cover_art})` : 'linear-gradient(135deg, #ec4899, #9333ea)' }}
+                />
 
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex overflow-hidden relative z-10">
                     {/* Main Content */}
-                    <div className="flex-1 flex flex-col items-center justify-center relative p-8">
-                        {/* Background Blur */}
-                        <div
-                            className="absolute inset-0 bg-cover bg-center opacity-30 blur-3xl scale-150 pointer-events-none"
-                            style={{ backgroundImage: currentSong?.cover_art ? `url(${currentSong.cover_art})` : 'linear-gradient(135deg, #ec4899, #9333ea)' }}
-                        />
+                    <div className="flex-1 flex flex-col items-center justify-center p-8">
 
                         {/* Toggle */}
                         <ModeToggle />
@@ -278,29 +272,30 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                                 </div>
 
                                 {/* Progress */}
-                                <div className="flex items-center gap-3 mb-6">
-                                    <span className="text-xs text-white/40 w-10 text-right">{formatTime(progress)}</span>
-                                    <div className="flex-1 relative h-1.5 bg-white/10 rounded-full cursor-pointer">
-                                        <div className="absolute left-0 top-0 h-full bg-pink-500 rounded-full" style={{ width: `${progressPercent}%` }} />
+                                <div className="flex items-center gap-4 mb-8 w-full">
+                                    <span className="text-xs text-white/60 w-10 text-right font-mono">{formatTime(progress)}</span>
+                                    <div className="flex-1 h-1.5 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2.5 transition-all duration-300">
+                                        <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-600 rounded-full shadow-[0_0_15px_rgba(236,72,153,0.5)]" style={{ width: `${progressPercent}%` }} />
+                                        <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ left: `${progressPercent}%`, marginLeft: '-8px' }} />
                                         <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
                                     </div>
-                                    <span className="text-xs text-white/40 w-10">{formatTime(duration)}</span>
+                                    <span className="text-xs text-white/60 w-10 font-mono">{formatTime(duration)}</span>
                                 </div>
 
                                 {/* Main Controls */}
-                                <div className="flex items-center justify-center gap-8">
-                                    <button onClick={onPrev} className="text-white/80 hover:text-white transition transform hover:scale-110">
-                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
+                                <div className="flex items-center justify-center gap-10">
+                                    <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
+                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
                                     </button>
-                                    <button onClick={togglePlay} className="w-16 h-16 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg shadow-white/20">
+                                    <button onClick={togglePlay} className="w-20 h-20 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-[0_0_30px_rgba(255,255,255,0.3)] hover:shadow-[0_0_50px_rgba(255,255,255,0.5)]">
                                         {isPlaying ? (
-                                            <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                            <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
                                         ) : (
-                                            <svg className="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                            <svg className="w-10 h-10 ml-1.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                                         )}
                                     </button>
-                                    <button onClick={onNext} className="text-white/80 hover:text-white transition transform hover:scale-110">
-                                        <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
+                                    <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 hover:drop-shadow-glow">
+                                        <svg className="w-10 h-10" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
                                     </button>
                                 </div>
                             </div>

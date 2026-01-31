@@ -169,12 +169,13 @@ const Playlists = ({ onPlaySong, onNavigate, onOpenPlaylistModal }) => {
                     </div>
 
                     {playlists.map(pl => (
-                        <div key={pl.id} onClick={() => handleSelectPlaylist(pl)} className="group glass rounded-xl p-4 cursor-pointer hover:bg-white/10 transition flex flex-col">
-                            <div className="aspect-square rounded-lg bg-gray-800 mb-4 flex items-center justify-center relative overflow-hidden">
+                        <div key={pl.id} onClick={() => handleSelectPlaylist(pl)} className="group glass rounded-xl p-4 cursor-pointer hover:bg-white/10 hover:scale-[1.02] hover:shadow-2xl hover:shadow-pink-500/10 hover:border-pink-500/30 transition duration-300 flex flex-col relative overflow-hidden">
+                            <div className="absolute inset-0 bg-gradient-to-br from-pink-500/5 to-purple-600/5 opacity-0 group-hover:opacity-100 transition duration-500" />
+                            <div className="aspect-square rounded-lg bg-gray-800 mb-4 flex items-center justify-center relative overflow-hidden shadow-lg group-hover:shadow-pink-500/20 transition">
                                 {pl.cover_art ? (
-                                    <img src={pl.cover_art} className="w-full h-full object-cover" alt="" />
+                                    <img src={pl.cover_art} className="w-full h-full object-cover transform group-hover:scale-110 transition duration-500" alt="" />
                                 ) : (
-                                    <svg className="w-16 h-16 text-white/10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                                    <svg className="w-16 h-16 text-white/10 group-hover:text-pink-500/50 transition duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
                                 )}
                                 {/* Delete Btn */}
                                 <button
