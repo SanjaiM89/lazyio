@@ -213,6 +213,12 @@ class YouTubeDownloader:
             "check_formats": False,  # --no-check-formats: Don't verify format availability
             # Use format_sort (-S) instead of format (-f) per user's GitHub suggestion
             "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
+            # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                }
+            },
         }
         
         # Use cookies file if it exists (for deployed servers)
@@ -428,6 +434,12 @@ class YouTubeDownloader:
                 "no_warnings": True,
                 # Per yt-dlp docs: Use -S instead of strict -f to prefer but not require formats
                 "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
+                # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                    }
+                },
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
                 "merge_output_format": "mp4",
                 "writethumbnail": True,
@@ -559,7 +571,13 @@ class YouTubeDownloader:
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
-                "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
+                # Per yt-dlp docs: Use extractor_args to select player_client that doesn't require SABR/PO tokens
+                # android_vr and ios_downgraded work best without JS runtimes
+                "extractor_args": {
+                    "youtube": {
+                        "player_client": ["android_vr", "ios_downgraded", "tv_downgraded"],
+                    }
+                },
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
                 "postprocessors": [
                     {
