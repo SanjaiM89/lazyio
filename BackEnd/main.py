@@ -474,10 +474,15 @@ async def stream_song(song_id: str, request: Request, type: str = None, quality:
          raise HTTPException(status_code=404, detail="Song has no Telegram File ID")
 
     msg_id = int(msg_id_str)
+    print(f"[STREAM] Request for {song_id} -> Telegram Msg ID: {msg_id} (Type: {type})")
 
     try:
         # Get file info
         file_info = await tg_client.get_file_info(msg_id)
+        if not file_info:
+             print(f"[STREAM] get_file_info returned None for {msg_id}")
+             raise FileNotFound("File info unavailable")
+             
         file_size = file_info["file_size"]
         mime_type = file_info["mime_type"]
         
