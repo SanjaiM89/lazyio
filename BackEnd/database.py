@@ -735,3 +735,22 @@ async def init_default_playlists():
         if len(all_songs) >= 5:
             mix = random.sample(all_songs, min(15, len(all_songs)))
             await create_app_playlist("Random Mix", [s["id"] for s in mix], "A bit of everything")
+
+
+async def update_song_video(song_id: str, video_telegram_id: str):
+    """Update a song with video telegram ID"""
+    if not song_id or not video_telegram_id:
+        return False
+    
+    try:
+        result = await songs_collection.update_one(
+            {"_id": ObjectId(song_id)},
+            {"$set": {
+                "video_telegram_id": video_telegram_id,
+                "has_video": True
+            }}
+        )
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"Error updating song video: {e}")
+        return False

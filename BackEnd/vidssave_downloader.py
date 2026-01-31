@@ -42,6 +42,7 @@ class VidsSaveDownloadTask:
     thumbnail: str = ""
     duration: int = 0
     file_path: Optional[str] = None
+    video_path: Optional[str] = None  # Added field
     error: Optional[str] = None
 
 
@@ -269,6 +270,9 @@ class VidsSaveDownloader:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, _download_video)
             
+            # Store video path in task
+            task.video_path = video_path
+            
             # Stage 3: Convert to audio using FFmpeg
             task.status = VidsSaveDownloadStatus.CONVERTING
             task.progress = 80
@@ -291,11 +295,7 @@ class VidsSaveDownloader:
                     audio_path
                 ]
                 subprocess.run(cmd, check=True, capture_output=True)
-                
-                # Remove video file after conversion
-                if os.path.exists(video_path):
-                    os.remove(video_path)
-                
+                # Video file is kept for uploading
                 return audio_path
             
             await loop.run_in_executor(None, _convert_to_audio)
