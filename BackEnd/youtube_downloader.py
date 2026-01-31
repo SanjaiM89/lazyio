@@ -334,8 +334,44 @@ class YouTubeDownloader:
             "channel": info.get("channel", ""),
             "video_id": info.get("id", ""),
         }
-    
-    def _extract_video_id(self, url: str) -> str:
+    async def get_formats(self, url: str) -> list:
+        """Get available formats for a video"""
+        if not self.is_youtube_url(url):
+            raise ValueError("Invalid URL")
+            
+        opts = {
+             "quiet": True,
+             "no_warnings": True,
+             "extract_flat": False,
+             "listformats": True, # This just prints to stdout, we need info structure
+             "js_runtimes": {"deno": {}},
+        }
+        
+        def _fetch_formats():
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return info.get("formats", [])
+                
+        loop = asyncio.get_event_loop()
+        formats = await loop.run_in_executor(None, _fetch_formats)
+        
+        # Filter and process
+        results = []
+        for f in formats:
+            # We care about audio quality largely
+            if f.get("vcodec") == "none" and f.get("acodec") != "none":
+                # Audio only
+                results.append({
+                    "format_id": f.get("format_id"),
+                    "ext": f.get("ext"),
+                    "abr": f.get("abr"),
+                    "note": f.get("format_note"),
+                    "filesize": f.get("filesize"),
+                })
+        
+        # Sort by bitrate high to low
+        results.sort(key=lambda x: x.get("abr") or 0, reverse=True)
+        return results
         """Extract video ID from various YouTube URL formats"""
         import re
         patterns = [
@@ -617,11 +653,10 @@ class YouTubeDownloader:
             )
             
             opts = {
-                # Use format 140 (m4a 128k) first, fallback to any audio, then any format
-                # Format 140 was confirmed working in local tests
-                "format": "bestaudio/best",
+                # Fallback to video if audio-only fails (common for music videos with restrictions)
+                "format": "bestaudio[ext=m4a]/bestaudio/best[height<=720]/best",
                 "outtmpl": output_template,
-                "quiet": True,
+                "quiet": False,
                 "no_warnings": True,
                 # Let yt-dlp use default clients (don't restrict to single client)
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
@@ -659,6 +694,10 @@ class YouTubeDownloader:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9",
                 },
+                "js_runtimes": {
+                     "deno": {},
+                },
+                "verbose": True,
                 # Provide Deno binary path (installed in .deno/bin/deno relative to home or current)
                 "ffmpeg_location": "/usr/bin/ffmpeg", # Ensure ffmpeg is found (optional)
                 
