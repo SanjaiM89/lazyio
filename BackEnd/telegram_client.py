@@ -63,12 +63,22 @@ class TelegramClientWrapper:
     async def start(self):
         print(f"Starting {self.pool_size} Telegram Clients (Multi-Socket)...")
         
-        # Start all clients in parallel
-        tasks = []
+        # Start all clients in parallel, with FloodWait handling
         for i, client in enumerate(self.clients):
-            tasks.append(client.start(bot_token=BOT_TOKEN))
-        
-        await asyncio.gather(*tasks)
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    await client.start(bot_token=BOT_TOKEN)
+                    print(f"[TG] Worker {i} started successfully.")
+                    break
+                except errors.FloodWaitError as e:
+                    wait_time = e.seconds
+                    print(f"[TG] Worker {i} hit FloodWait: Waiting {wait_time} seconds...")
+                    await asyncio.sleep(wait_time + 1) # Wait the required time + 1s buffer
+                except Exception as e:
+                    print(f"[TG] Worker {i} failed to start (attempt {attempt+1}): {e}")
+                    if attempt == max_retries - 1:
+                        print(f"[TG] CRITICAL: Worker {i} could not start after {max_retries} attempts.")
         
         # Check cryptg
         try:
