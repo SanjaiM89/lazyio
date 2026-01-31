@@ -434,7 +434,7 @@ async def api_scan_audio_features(background_tasks: BackgroundTasks):
         print(f"[SCAN] Found {len(all_songs)} songs to check.")
         
         count = 0
-                
+        for song in all_songs:
             # Need local file path. Note: Telegram files might not be local.
             # Only process if we have a local file?
             # Creating a temp file from telegram DL might be needed.
