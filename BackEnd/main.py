@@ -294,7 +294,7 @@ async def delete_cookies():
 
 
 @app.post("/api/upload")
-async def upload_files(files: list[UploadFile] = File(...)):
+async def upload_files(background_tasks: BackgroundTasks, files: list[UploadFile] = File(...)):
     """
     Uploads files to server temp, extracts metadata, uploads to Telegram,
     saves to DB, then cleans up.
