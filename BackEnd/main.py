@@ -57,10 +57,11 @@ async def refresh_ai_recommendations():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # === FAST STARTUP - Bind port first ===
+    # Only do minimal init here so Render detects port quickly
     await init_db()
     
-    # Clean up temp_uploads/youtube on startup
+    # Clean up temp dirs
     youtube_temp_dir = os.path.join(TEMP_DIR, "youtube")
     if os.path.exists(youtube_temp_dir):
         import shutil
@@ -71,29 +72,41 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[STARTUP] Failed to clean temp directory: {e}")
     
-    
-    try:
-        await tg_client.start()
-        
-        # Initialize Telegram Notifier for VPN auto-recovery
-        from telegram_notifier import init_notifier
-        init_notifier(tg_client)
-        print("Telegram Notifier initialized")
-    except Exception as e:
-        print(f"Failed to start Telegram Client: {e}")
-        
-    # Initialize default playlists
+    # Initialize default playlists (fast)
     await init_default_playlists()
     
-    # Initialize Audio Recommender Index
-    try:
-        print("[Audio] Loading feature vectors...")
-        vectors = await get_all_vectors()
-        for sid, vec in vectors.items():
-            audio_recommender.add_to_index(sid, vec)
-        print(f"[Audio] Loaded {len(vectors)} vectors into index")
-    except Exception as e:
-        print(f"[Audio] Failed to load vectors: {e}")
+    print("[STARTUP] Fast init complete - server ready to accept connections")
+    
+    # === BACKGROUND INITIALIZATION ===
+    # Start heavy tasks in background AFTER server is listening
+    async def delayed_init():
+        """Run heavy initialization after server starts"""
+        await asyncio.sleep(1)  # Give server time to bind port
+        
+        # Start Telegram client
+        try:
+            print("[STARTUP] Starting Telegram client...")
+            await tg_client.start()
+            
+            # Initialize Telegram Notifier for VPN auto-recovery
+            from telegram_notifier import init_notifier
+            init_notifier(tg_client)
+            print("[STARTUP] Telegram client ready")
+        except Exception as e:
+            print(f"[STARTUP] Failed to start Telegram Client: {e}")
+        
+        # Load Audio Recommender Index
+        try:
+            print("[STARTUP] Loading feature vectors...")
+            vectors = await get_all_vectors()
+            for sid, vec in vectors.items():
+                audio_recommender.add_to_index(sid, vec)
+            print(f"[STARTUP] Loaded {len(vectors)} vectors into index")
+        except Exception as e:
+            print(f"[STARTUP] Failed to load vectors: {e}")
+    
+    # Start background init task
+    init_task = asyncio.create_task(delayed_init())
     
     # Start background AI refresh task
     ai_task = asyncio.create_task(refresh_ai_recommendations())
@@ -102,6 +115,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     ai_task.cancel()
+    init_task.cancel()
     await tg_client.stop()
 
 app = FastAPI(lifespan=lifespan)

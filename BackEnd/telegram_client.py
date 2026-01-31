@@ -37,7 +37,8 @@ class TelegramClientWrapper:
         # 1. OPTIMIZATION: Multi-Client Pool (IDM Style)
 
         # We spawn multiple clients to open multiple TCP connections.
-        self.pool_size = 4  # 4 Workers = ~4x Speed
+        # Configurable via env var, default 4 for best performance
+        self.pool_size = int(os.getenv("TELEGRAM_POOL_SIZE", "4"))
         self.clients = []
         self.session_base = "TelethonBot"
         self.bin_channel = BIN_CHANNEL
