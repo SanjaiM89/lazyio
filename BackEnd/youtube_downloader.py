@@ -625,11 +625,10 @@ class YouTubeDownloader:
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "Accept-Language": "en-US,en;q=0.9",
                 },
-                # Force iOS client (often more stable than Android on servers)
-                # Fallback to android_vr and tv_embedded which don't need JS
+                # Force android_vr (documented fallback for no-JS) and tv_embedded
                 "extractor_args": {
                     "youtube": {
-                        "player_client": ["ios", "android_vr", "tv_embedded"]
+                        "player_client": ["android_vr", "tv_embedded", "ios_downgraded"]
                     }
                 },
             }
