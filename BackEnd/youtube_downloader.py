@@ -12,6 +12,7 @@ from enum import Enum
 from yt_dlp import YoutubeDL
 import re
 import subprocess
+import shutil
 
 # Temp directory for downloads
 DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), "temp_uploads", "youtube")
