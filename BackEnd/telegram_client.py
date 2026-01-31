@@ -175,8 +175,8 @@ class TelegramClientWrapper:
                 raise FileNotFound("No media found")
             
             return {
-                "file_name": message.file.name or f"file_{message_id}",
-                "mime_type": message.file.mime_type or "application/octet-stream",
+                "file_name": message.file.name or f"file_{message_id}.mp3",
+                "mime_type": message.file.mime_type or mimetypes.guess_type(message.file.name or "")[0] or "audio/mpeg",
                 "file_size": message.file.size
             }
         except Exception as e:
