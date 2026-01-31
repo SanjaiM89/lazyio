@@ -107,10 +107,43 @@ class YouTubeDownloader:
         r'(https?://)?(www\.)?youtube\.com/playlist\?list=[\w-]+',
     ]
     
+    def _check_and_install_deno(self):
+        """
+        Checks if Deno is installed. If not, downloads and installs it to ~/.deno/bin.
+        Updates os.environ["PATH"] to include the Deno bin directory.
+        """
+        home = os.path.expanduser("~")
+        deno_dir = os.path.join(home, ".deno")
+        deno_bin_dir = os.path.join(deno_dir, "bin")
+        deno_exe = os.path.join(deno_bin_dir, "deno")
+
+        # Add to PATH if not present
+        if deno_bin_dir not in os.environ["PATH"]:
+            os.environ["PATH"] += os.pathsep + deno_bin_dir
+            print(f"[YT] Added Deno to PATH: {deno_bin_dir}")
+
+        if os.path.exists(deno_exe):
+            print(f"[YT] Deno detected at: {deno_exe}")
+            return
+
+        print("[YT] Deno not found. Attempting to install...")
+        try:
+            # We use the standard install script piped to sh.
+            # This requires curl and sh.
+            install_cmd = "curl -fsSL https://deno.land/install.sh | sh"
+            subprocess.run(install_cmd, shell=True, check=True)
+            print("[YT] Deno installed successfully.")
+        except Exception as e:
+            print(f"[YT] Failed to install Deno: {e}")
+            print("[YT] SABR download functionality may be limited.")
+
     def __init__(self):
         self._cancelled_tasks: set = set()
         # Limit concurrent downloads to 3 to avoid YouTube rate limits/bot detection
         self.semaphore = asyncio.Semaphore(3)
+        
+        # Ensure Deno is available for yt-dlp (SABR support)
+        self._check_and_install_deno()
         
         # DEBUG: Verify JS Runtimes
         import shutil
@@ -124,7 +157,7 @@ class YouTubeDownloader:
             print("[YT] Python 'quickjs' module: NOT FOUND")
             
         print(f"[YT] 'quickjs' binary check: {shutil.which('quickjs')}")
-        print(f"[YT] 'node' binary check: {shutil.which('node')}")
+        print(f"[YT] 'deno' binary check: {shutil.which('deno')}")
     
     @classmethod
     def is_youtube_url(cls, url: str) -> bool:

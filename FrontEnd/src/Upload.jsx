@@ -70,7 +70,9 @@ const Upload = ({ onUploadComplete }) => {
         setDragActive(false);
 
         const droppedFiles = [...e.dataTransfer.files].filter(f =>
-            f.type.startsWith('audio/') || f.name.endsWith('.mp3') || f.name.endsWith('.flac') || f.name.endsWith('.wav')
+            f.type.startsWith('audio/') || f.type.startsWith('video/') ||
+            f.name.endsWith('.mp3') || f.name.endsWith('.flac') || f.name.endsWith('.wav') ||
+            f.name.endsWith('.m4a') || f.name.endsWith('.mp4') || f.name.endsWith('.mkv') || f.name.endsWith('.webm')
         );
         setFiles(prev => [...prev, ...droppedFiles]);
     }, []);
@@ -135,9 +137,9 @@ const Upload = ({ onUploadComplete }) => {
             <div className="max-w-3xl mx-auto">
                 <div className="text-center mb-12 animate-fade-in">
                     <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
-                        Upload Music
+                        Upload Music & Videos
                     </h1>
-                    <p className="text-white/50">Add your favorite tracks to the library</p>
+                    <p className="text-white/50">Add your favorite tracks and videos to the library</p>
                 </div>
 
                 {/* Drop Zone */}
@@ -153,7 +155,7 @@ const Upload = ({ onUploadComplete }) => {
                         ref={inputRef}
                         type="file"
                         multiple
-                        accept="audio/*,.mp3,.flac,.wav,.m4a,.ogg"
+                        accept="audio/*,video/*,.mp3,.flac,.wav,.m4a,.ogg,.mp4,.mkv,.webm"
                         onChange={handleChange}
                         className="hidden"
                     />
@@ -165,9 +167,9 @@ const Upload = ({ onUploadComplete }) => {
                     </div>
 
                     <p className="text-xl font-medium mb-2">
-                        {dragActive ? 'Drop your files here' : 'Drag & drop music files'}
+                        {dragActive ? 'Drop your files here' : 'Drag & drop music or video files'}
                     </p>
-                    <p className="text-white/40 text-sm">or click to browse • MP3, FLAC, WAV, M4A</p>
+                    <p className="text-white/40 text-sm">or click to browse • MP3, M4A, MP4, WEBM</p>
                 </div>
 
                 {/* File List */}
