@@ -37,7 +37,7 @@ const SongMenu = ({ song, onAddToPlaylist, onDelete, className = "" }) => {
     };
 
     return (
-        <div className={`relative ${className}`} ref={menuRef}>
+        <div className={`relative ${className} ${isOpen ? '!opacity-100 z-50' : ''}`} ref={menuRef}>
             <button
                 onClick={toggleMenu}
                 className="p-2 rounded-full hover:bg-white/10 text-white/40 hover:text-white transition"
@@ -48,7 +48,7 @@ const SongMenu = ({ song, onAddToPlaylist, onDelete, className = "" }) => {
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in">
+                <div className="absolute right-0 top-full mt-1 w-48 bg-[#1a1a2e]/60 backdrop-blur-md border border-white/10 rounded-xl shadow-xl z-50 overflow-hidden animate-fade-in">
                     <div className="py-1">
                         <button
                             onClick={(e) => handleAction(e, 'add')}
