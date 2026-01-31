@@ -133,6 +133,7 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(0.8);
     const [mode, setMode] = useState('audio');
+    const [preferredMode, setPreferredMode] = useState('audio'); // User's video preference
     const [videoLoading, setVideoLoading] = useState(false);
     const [videoError, setVideoError] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -141,14 +142,23 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const hasVideo = currentSong?.hasVideo || currentSong?.has_video;
 
     useEffect(() => {
-        if (currentSong && audioRef.current) {
-            // Reset to audio mode when song changes
+        if (!currentSong) return;
+
+        setVideoError(null);
+        setIsPlaying(true);
+
+        // If user prefers video AND song has video, use video mode
+        if (preferredMode === 'video' && hasVideo) {
+            setMode('video');
+            // Video will auto-play via onLoadedMetadata
+        } else {
+            // Fallback to audio (or user prefers audio)
             setMode('audio');
-            setVideoError(null);
-            audioRef.current.play().catch(e => console.error("Play error:", e));
-            setIsPlaying(true);
+            setTimeout(() => {
+                if (audioRef.current) audioRef.current.play().catch(e => console.error("Play error:", e));
+            }, 50);
         }
-    }, [currentSong]);
+    }, [currentSong, preferredMode, hasVideo]);
 
     // Volume sync
     useEffect(() => {
@@ -210,6 +220,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
 
     const switchMode = (newMode) => {
         if (newMode === mode) return;
+
+        // Save user's preference when they manually switch
+        setPreferredMode(newMode);
 
         // Get current time from active media
         const currentTime = mode === 'video'
