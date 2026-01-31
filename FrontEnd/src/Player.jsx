@@ -21,12 +21,16 @@ const VideoPlayer = ({
     videoLoading,
     isFullscreen,
     volume,
-    setVolume
+    setVolume,
+    isBuffering
 }) => (
     <div ref={videoContainerRef} className={`relative w-full ${isFullscreen ? 'h-screen bg-black' : 'max-w-4xl aspect-video rounded-xl overflow-hidden bg-black/50'} z-10 mb-6 group`}>
-        {videoLoading && (
-            <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-                <div className="w-12 h-12 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
+        {(videoLoading || isBuffering) && (
+            <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none bg-black/30">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
+                    {isBuffering && <span className="text-white/80 text-sm">Buffering...</span>}
+                </div>
             </div>
         )}
 
@@ -41,10 +45,14 @@ const VideoPlayer = ({
                 setDuration(videoRef.current?.duration || 0);
                 if (isPlaying) videoRef.current.play().catch(console.error);
             }}
+            onWaiting={() => setIsBuffering(true)}
+            onPlaying={() => setIsBuffering(false)}
+            onCanPlay={() => setIsBuffering(false)}
             onError={(e) => {
                 console.error(e);
                 setVideoError("Video load failed");
                 setVideoLoading(false);
+                setIsBuffering(false);
             }}
             controls={false}
             playsInline
@@ -137,6 +145,7 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const [videoLoading, setVideoLoading] = useState(false);
     const [videoError, setVideoError] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isBuffering, setIsBuffering] = useState(false);
 
     // Initial load & Song Change
     const hasVideo = currentSong?.hasVideo || currentSong?.has_video;
@@ -308,6 +317,8 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                             isFullscreen={isFullscreen}
                             volume={volume}
                             setVolume={setVolume}
+                            isBuffering={isBuffering}
+                            setIsBuffering={setIsBuffering}
                         />
                     ) : (
                         <div className={`relative z-10 mb-10 ${isPlaying ? 'animate-spin-slow' : ''}`}>

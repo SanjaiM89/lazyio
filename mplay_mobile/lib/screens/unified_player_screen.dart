@@ -55,10 +55,18 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _mode = widget.startWithVideo && widget.song.hasVideo ? 1 : 0;
     _tabController = TabController(length: 3, vsync: this);
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Use persisted playback mode preference if song has video
+      final musicProvider = Provider.of<MusicProvider>(context, listen: false);
+      final preferredMode = musicProvider.lastPlaybackMode;
+      
+      // If user prefers video (1) AND song has video, use video mode
+      // Otherwise fallback to audio (0)
+      _mode = (preferredMode == 1 && widget.song.hasVideo) ? 1 : 0;
+      setState(() {});
+      
       _fetchLikeStatus();
       _loadRecommendations();
       if (_mode == 1) {
@@ -651,7 +659,21 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
               ),
             ),
             if (_videoController!.value.isBuffering)
-              const CircularProgressIndicator(color: Colors.white),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 12),
+                    Text('Buffering...', style: TextStyle(color: Colors.white70, fontSize: 14)),
+                  ],
+                ),
+              ),
           ],
         );
       }
