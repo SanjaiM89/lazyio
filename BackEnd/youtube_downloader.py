@@ -198,32 +198,73 @@ class YouTubeDownloader:
 
     
     async def get_video_info(self, url: str) -> Dict[str, Any]:
-        """Fetch video metadata without downloading"""
-        opts = {
+        """Fetch video metadata without downloading - with robust fallback"""
+        
+        # Build base options - no format restriction at all for preview
+        base_opts = {
             "quiet": True,
             "no_warnings": True,
-            "extract_flat": False, 
-            # "format": "best", # REMOVED: User suggested dropping -f
-            "format_sort": ["vcodec:h264", "res:720", "acodec:aac"], # User suggested -S options
-            "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
+            "skip_download": True,
+            "ignoreerrors": True,  # Don't fail on unavailable formats
         }
         
         # Use cookies file if it exists (for deployed servers)
         if os.path.exists(COOKIES_FILE):
-            opts["cookiefile"] = COOKIES_FILE
+            base_opts["cookiefile"] = COOKIES_FILE
             print(f"[YT] Using cookies file")
         else:
             print(f"[YT] No cookies file - YouTube may block some requests")
         
-        def _extract():
+        def _extract_flat():
+            """Fast extraction - just metadata, no format parsing"""
+            opts = {**base_opts, "extract_flat": "in_playlist"}  # Works for single videos too
+            with YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                return info
+        
+        def _extract_full():
+            """Full extraction with permissive format sorting"""
+            opts = {
+                **base_opts,
+                "extract_flat": False,
+                "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
+            }
             with YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return info
         
         loop = asyncio.get_event_loop()
-        info = await loop.run_in_executor(None, _extract)
+        info = None
         
+        # Strategy 1: Try flat extraction first (fastest, most reliable for preview)
+        try:
+            print("[YT] Trying flat extraction...")
+            info = await loop.run_in_executor(None, _extract_flat)
+        except Exception as e:
+            print(f"[YT] Flat extraction failed: {e}")
+        
+        # Strategy 2: If flat failed, try full extraction
         if not info:
+            try:
+                print("[YT] Trying full extraction with format_sort...")
+                info = await loop.run_in_executor(None, _extract_full)
+            except Exception as e:
+                print(f"[YT] Full extraction failed: {e}")
+        
+        # Strategy 3: Parse video ID from URL and provide minimal info
+        if not info:
+            video_id = self._extract_video_id(url)
+            if video_id:
+                print(f"[YT] Falling back to minimal info for video: {video_id}")
+                return {
+                    "title": f"YouTube Video ({video_id})",
+                    "artist": "Unknown Artist",
+                    "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                    "duration": 0,
+                    "view_count": 0,
+                    "channel": "",
+                    "video_id": video_id,
+                }
             raise ValueError("Could not fetch video info")
         
         # Parse artist from various fields
@@ -250,6 +291,19 @@ class YouTubeDownloader:
             "channel": info.get("channel", ""),
             "video_id": info.get("id", ""),
         }
+    
+    def _extract_video_id(self, url: str) -> str:
+        """Extract video ID from various YouTube URL formats"""
+        import re
+        patterns = [
+            r'(?:v=|/v/|youtu\.be/|/embed/|/shorts/)([^&?#]+)',
+            r'youtube\.com/watch\?.*v=([^&]+)',
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return ""
     
     def _create_progress_hook(self, task: DownloadTask, broadcast_callback=None):
         """Create a progress hook for yt-dlp"""
