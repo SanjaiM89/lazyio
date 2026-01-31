@@ -66,7 +66,7 @@ class VidsSaveDownloader:
     
     def __init__(self):
         self._cancelled_tasks: set = set()
-        self._conversion_sem = asyncio.Semaphore(1)  # Limit concurrent conversions to 1
+        self._conversion_sem = asyncio.Semaphore(4)  # Allow 4 concurrent conversions
         print("[VidsSave] VidsSave-based downloader initialized")
     
     def is_youtube_url(self, url: str) -> bool:
