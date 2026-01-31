@@ -42,28 +42,26 @@ const Upload = ({ onUploadComplete }) => {
         if (files.length === 0) return;
         setUploading(true);
 
-        // Simulate progress for each file
-        const progressInterval = setInterval(() => {
-            setUploadProgress(prev => {
-                const newProgress = { ...prev };
-                files.forEach((file, idx) => {
-                    if (!newProgress[idx]) newProgress[idx] = 0;
-                    if (newProgress[idx] < 90) {
-                        newProgress[idx] += Math.random() * 15;
-                    }
-                });
-                return newProgress;
-            });
-        }, 200);
-
+        // Upload files one by one (or all at once? API takes list)
+        // Let's do all at once as per API design
         const formData = new FormData();
         files.forEach(file => {
             formData.append('files', file);
         });
 
         try {
-            await uploadSongs(formData);
-            // Complete all progress
+            await uploadSongs(formData, (percent) => {
+                // Since we upload all files in one request, we set all progress bars to the same global percentage
+                // This is a limitation of the current bulk API. 
+                // To have individual progress, we'd need to upload one by one.
+                setUploadProgress(prev => {
+                    const newProgress = {};
+                    files.forEach((_, idx) => newProgress[idx] = percent);
+                    return newProgress;
+                });
+            });
+
+            // Success
             setUploadProgress(prev => {
                 const completed = {};
                 files.forEach((_, idx) => completed[idx] = 100);
@@ -74,11 +72,11 @@ const Upload = ({ onUploadComplete }) => {
                 setFiles([]);
                 setUploadProgress({});
                 onUploadComplete?.();
-            }, 500);
+            }, 1000);
         } catch (error) {
-            console.error(error);
+            console.error("Upload failed:", error);
+            alert("Upload failed! Check console.");
         } finally {
-            clearInterval(progressInterval);
             setUploading(false);
         }
     };

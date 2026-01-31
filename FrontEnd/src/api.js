@@ -5,21 +5,29 @@ const port = localStorage.getItem('backend_port') || '8000';
 
 const getBaseUrl = () => {
     let host = ip;
-    // Remove trailing slash if user added it
+    // Remove trailing slash
     if (host.endsWith('/')) host = host.slice(0, -1);
 
-    // Check if protocol is missing
+    // 1. Handle Protocol
     if (!host.startsWith('http://') && !host.startsWith('https://')) {
-        host = `http://${host}`; // Default to http for localhost/IPs
+        // Default to http, unless it looks like a domain that might be https (user responsibility really, but let's default safe)
+        host = `http://${host}`;
     }
 
-    // Append port only if sensible:
-    // 1. Port is provided
-    // 2. Port is not standard 80/443 (implicit)
-    // 3. User didn't already include a port in the "IP" field (e.g. localhost:8000)
+    // 2. Handle Port
+    // Only append port if:
+    // - Port is provided
+    // - Port is not empty
+    // - Port is not default (80/443)
+    // - Host does NOT already have a port (check for : at end of string or after domain)
     if (port && port !== '80' && port !== '443') {
-        const cleanHost = host.replace('https://', '').replace('http://', '');
-        if (!cleanHost.includes(':')) {
+        // robust check for port in host:
+        // remove protocol first
+        const bareHost = host.split('://')[1];
+        // check if bareHost has a colon followed by digits
+        const hasPort = /:\d+$/.test(bareHost);
+
+        if (!hasPort) {
             host = `${host}:${port}`;
         }
     }
@@ -50,11 +58,19 @@ export const getSongs = async () => {
     return response.data;
 };
 
-export const uploadSongs = async (formData) => {
+export const uploadSongs = async (formData, onProgress) => {
     const response = await api.post('/upload', formData, {
         headers: {
             'Content-Type': 'multipart/form-data',
         },
+        onUploadProgress: (progressEvent) => {
+            if (onProgress) {
+                const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                onProgress(percentCompleted);
+            }
+        },
+        // Increase timeout for large uploads (e.g., 30 mins)
+        timeout: 30 * 60 * 1000
     });
     return response.data;
 };
