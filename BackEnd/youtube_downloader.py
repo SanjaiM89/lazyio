@@ -200,12 +200,19 @@ class YouTubeDownloader:
     async def get_video_info(self, url: str) -> Dict[str, Any]:
         """Fetch video metadata without downloading - with robust fallback"""
         
-        # Build base options - no format restriction at all for preview
+        # Build base options using yt-dlp documentation options
+        # Key options from docs:
+        # - ignore_no_formats_error: "Ignore 'No video formats' error. Useful for extracting metadata"
+        # - check_formats: False = "Do not check that the formats are actually downloadable"
         base_opts = {
             "quiet": True,
             "no_warnings": True,
             "skip_download": True,
-            "ignoreerrors": True,  # Don't fail on unavailable formats
+            "ignoreerrors": True,  # -i: Ignore download and postprocessing errors
+            "ignore_no_formats_error": True,  # From docs: useful for extracting metadata
+            "check_formats": False,  # --no-check-formats: Don't verify format availability
+            # Use format_sort (-S) instead of format (-f) per user's GitHub suggestion
+            "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
         }
         
         # Use cookies file if it exists (for deployed servers)
@@ -215,43 +222,30 @@ class YouTubeDownloader:
         else:
             print(f"[YT] No cookies file - YouTube may block some requests")
         
-        def _extract_flat():
-            """Fast extraction - just metadata, no format parsing"""
-            opts = {**base_opts, "extract_flat": "in_playlist"}  # Works for single videos too
-            with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return info
-        
-        def _extract_full():
-            """Full extraction with permissive format sorting"""
-            opts = {
-                **base_opts,
-                "extract_flat": False,
-                "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
-            }
-            with YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                return info
+        def _extract_with_fallback():
+            """Extract metadata with robust error handling"""
+            try:
+                with YoutubeDL(base_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return info
+            except Exception as e:
+                print(f"[YT] Primary extraction failed: {e}")
+                # Fallback: Try with extract_flat
+                flat_opts = {**base_opts, "extract_flat": True}
+                with YoutubeDL(flat_opts) as ydl:
+                    return ydl.extract_info(url, download=False)
         
         loop = asyncio.get_event_loop()
         info = None
         
-        # Strategy 1: Try flat extraction first (fastest, most reliable for preview)
+        # Try extraction with fallback
         try:
-            print("[YT] Trying flat extraction...")
-            info = await loop.run_in_executor(None, _extract_flat)
+            print("[YT] Extracting video info with ignore_no_formats_error...")
+            info = await loop.run_in_executor(None, _extract_with_fallback)
         except Exception as e:
-            print(f"[YT] Flat extraction failed: {e}")
+            print(f"[YT] Extraction failed: {e}")
         
-        # Strategy 2: If flat failed, try full extraction
-        if not info:
-            try:
-                print("[YT] Trying full extraction with format_sort...")
-                info = await loop.run_in_executor(None, _extract_full)
-            except Exception as e:
-                print(f"[YT] Full extraction failed: {e}")
-        
-        # Strategy 3: Parse video ID from URL and provide minimal info
+        # Final fallback: Parse video ID from URL and provide minimal info
         if not info:
             video_id = self._extract_video_id(url)
             if video_id:
@@ -432,7 +426,8 @@ class YouTubeDownloader:
                 "outtmpl": output_template,
                 "quiet": True,
                 "no_warnings": True,
-                "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
+                # Per yt-dlp docs: Use -S instead of strict -f to prefer but not require formats
+                "format_sort": ["res:720", "vcodec:h264", "acodec:aac"],
                 "progress_hooks": [self._create_progress_hook(task, broadcast_callback)],
                 "merge_output_format": "mp4",
                 "writethumbnail": True,
