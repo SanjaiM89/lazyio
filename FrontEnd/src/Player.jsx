@@ -339,63 +339,82 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     // Mini Bar View
     return (
         <>
-            <div className="h-20 glass border-t border-white/10 flex items-center px-4 md:px-8 gap-4 md:gap-8 cursor-pointer hover:bg-white/5 transition" onClick={onToggleView}>
-                {/* Song Info */}
-                <div className="flex items-center gap-4 w-1/3 min-w-0">
-                    {currentSong ? (
-                        <>
-                            <div className={`w-12 h-12 rounded bg-gray-800 flex-shrink-0 overflow-hidden relative ${isPlaying ? 'animate-spin-slow' : ''}`}>
-                                <img src={currentSong.cover_art} className="w-full h-full object-cover" alt="" />
-                                {/* Overlay play icon on hover (hint to expand) */}
-                                <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 hover:opacity-100 transition">
-                                    <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+            <>
+                <div className="h-24 glass border-t border-white/10 flex items-center px-4 md:px-8 gap-4 md:gap-8 cursor-pointer hover:bg-white/5 transition group/player" onClick={onToggleView}>
+                    {/* Song Info */}
+                    <div className="flex items-center gap-4 w-1/3 min-w-0">
+                        {currentSong ? (
+                            <>
+                                <div className={`w-14 h-14 rounded-lg bg-gray-800 flex-shrink-0 overflow-hidden relative shadow-lg ${isPlaying ? 'animate-spin-slow' : ''}`}>
+                                    <img src={currentSong.cover_art} className="w-full h-full object-cover" alt="" />
+                                    {/* Overlay play icon on hover (hint to expand) */}
+                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover/player:opacity-100 transition">
+                                        <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="min-w-0">
-                                <p className="font-semibold text-white truncate">{currentSong.title}</p>
-                                <p className="text-xs text-white/60 truncate">{currentSong.artist}</p>
-                            </div>
-                        </>
-                    ) : (
-                        <p className="text-white/40 text-sm">No song playing</p>
-                    )}
-                </div>
+                                <div className="min-w-0">
+                                    <p className="font-bold text-white truncate text-base">{currentSong.title}</p>
+                                    <p className="text-sm text-white/60 truncate">{currentSong.artist}</p>
+                                </div>
+                            </>
+                        ) : (
+                            <p className="text-white/40 text-sm">No song playing</p>
+                        )}
+                    </div>
 
-                {/* Controls (Stop propagation so clicking buttons doesn't expand) */}
-                <div className="flex-1 flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-6 mb-1">
-                        <button onClick={onPrev} className="text-white/70 hover:text-white"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg></button>
-                        <button onClick={togglePlay} className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition">
-                            {isPlaying ? <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg> : <svg className="w-4 h-4 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>}
+                    {/* Controls (Center) */}
+                    <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center gap-8 mb-2">
+                            <button onClick={onPrev} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
+                                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 6h2v12H6V6zm3.5 6 8.5 6V6l-8.5 6z" /></svg>
+                            </button>
+                            <button onClick={togglePlay} className="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition shadow-lg shadow-white/10 hover:shadow-white/20">
+                                {isPlaying ? (
+                                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                ) : (
+                                    <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                )}
+                            </button>
+                            <button onClick={onNext} className="text-white/60 hover:text-white transition transform hover:scale-110 p-2">
+                                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg>
+                            </button>
+                        </div>
+                        {/* Mini Progress */}
+                        <div className="w-full flex items-center gap-3">
+                            <span className="text-xs text-white/40 w-8 text-right font-mono">{formatTime(progress)}</span>
+                            <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2 transition-all duration-300">
+                                <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full" style={{ width: `${progressPercent}%` }} />
+                                <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-md" style={{ left: `${progressPercent}%`, marginLeft: '-6px' }} />
+                                <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                            </div>
+                            <span className="text-xs text-white/40 w-8 font-mono">{formatTime(duration)}</span>
+                        </div>
+                    </div>
+
+                    {/* Volume / Extra */}
+                    <div className="hidden md:flex items-center gap-3 w-1/3 justify-end" onClick={e => e.stopPropagation()}>
+                        <button className="text-white/60 hover:text-white">
+                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
                         </button>
-                        <button onClick={onNext} className="text-white/70 hover:text-white"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zm2 0h2V6h-2v12z" transform="scale(-1, 1) translate(-24, 0)" /></svg></button>
-                    </div>
-                    {/* Mini Progress */}
-                    <div className="w-full max-w-sm h-1 bg-white/10 rounded-full overflow-hidden relative group/prog">
-                        <div className="absolute left-0 top-0 h-full bg-pink-500 w-1/2" style={{ width: `${progressPercent}%` }} />
-                        <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 opacity-0 cursor-pointer" />
+                        <div className="w-24 h-1 bg-white/10 rounded-full relative group/vol">
+                            <div className="absolute left-0 top-0 h-full bg-white rounded-full group-hover/vol:bg-pink-500 transition-colors" style={{ width: `${volume * 100}%` }} />
+                            <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                        </div>
                     </div>
                 </div>
 
-                {/* Volume / Extra */}
-                <div className="hidden md:flex items-center gap-2 w-1/3 justify-end" onClick={e => e.stopPropagation()}>
-                    <svg className="w-4 h-4 text-white/60" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
-                    <input type="range" min="0" max="1" step="0.01" value={volume} onChange={e => setVolume(parseFloat(e.target.value))} className="w-20 accent-pink-500" />
-                </div>
-            </div>
-
-            {/* Always render Audio to maintain state when toggling view */}
-            {/* IMPORTANT: Render audio element here in mini-view return as well */}
-            <audio
-                ref={audioRef}
-                src={currentSong ? getStreamUrl(currentSong.id) : undefined}
-                onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
-                onEnded={onNext}
-                onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-                style={{ display: 'none' }}
-            />
-        </>
-    );
+                {/* Always render Audio to maintain state when toggling view */}
+                {/* IMPORTANT: Render audio element here in mini-view return as well */}
+                <audio
+                    ref={audioRef}
+                    src={currentSong ? getStreamUrl(currentSong.id) : undefined}
+                    onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
+                    onEnded={onNext}
+                    onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+                    style={{ display: 'none' }}
+                />
+            </>
+            );
 };
 
-export default Player;
+            export default Player;

@@ -203,7 +203,7 @@ class YouTubeDownloader:
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
-            "format": "bestaudio/bestvideo/best", # Use permissive format for metadata extraction
+            # "format": "best", # REMOVED: Don't restrict format for metadata only
             "js_runtimes": {"node": {}},  # Enable Node.js for YouTube signature solving
         }
         

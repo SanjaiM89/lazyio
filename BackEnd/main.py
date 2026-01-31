@@ -1427,6 +1427,7 @@ if __name__ == "__main__":
         port=port, 
         reload=True,
         reload_includes=["config.env", "*.env", "restart_required.flag"],
+        reload_excludes=["temp_uploads", "__pycache__", "venv", ".git", "node_modules", ".pytest_cache", "FrontEnd"],
         timeout_graceful_shutdown=1
     )
 
