@@ -23,8 +23,15 @@ API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 BIN_CHANNEL = int(os.getenv("BIN_CHANNEL", "0"))
+PROXY_ENABLED = os.getenv("PROXY", "false").lower() == "true"
 
-print(f"DEBUG: API_ID={API_ID} BIN_CHANNEL={BIN_CHANNEL}")
+print(f"DEBUG: API_ID={API_ID} BIN_CHANNEL={BIN_CHANNEL} PROXY_ENABLED={PROXY_ENABLED}")
+
+# Proxy API endpoints
+PROXY_API_SOCKS = "https://api.mtpro.xyz/api/?type=socks"
+PROXY_API_MTPROTO = "https://api.mtpro.xyz/api/?type=mtproto"
+PROXY_FALLBACK_SOCKS = "https://raw.githubusercontent.com/hookzof/socks5_list/master/tg/socks.json"
+PROXY_FALLBACK_MTPROTO = "https://raw.githubusercontent.com/hookzof/socks5_list/master/tg/mtproto.json"
 
 class FileNotFound(Exception):
     pass
@@ -34,52 +41,342 @@ class TelegramClientWrapper:
         if not all([API_ID, API_HASH, BOT_TOKEN, BIN_CHANNEL]):
             raise ValueError("Missing Telegram Config")
         
-        # 1. OPTIMIZATION: Multi-Client Pool (IDM Style)
-
-        # We spawn multiple clients to open multiple TCP connections.
-        # Configurable via env var, default 4 for best performance
+        # Multi-Client Pool
         self.pool_size = int(os.getenv("TELEGRAM_POOL_SIZE", "4"))
         self.clients = []
         self.session_base = "TelethonBot"
         self.bin_channel = BIN_CHANNEL
         self._bin_entity = None
         
-        # Initialize the pool
+        # Proxy management
+        self._proxy_enabled = PROXY_ENABLED
+        self._proxy_list = []  # Cached list of proxies
+        self._current_proxy_index = 0
+        self._current_proxy = None
+        
+        # We'll initialize clients later in start() so we can fetch proxies first
+        self._initialized = False
+    
+    async def _fetch_proxies(self):
+        """Fetch proxy list from MTPro.XYZ API - both SOCKS5 and MTProto"""
+        import aiohttp
+        import json
+        
+        proxies = []
+        
+        async def fetch_socks5():
+            """Fetch SOCKS5 proxies"""
+            socks_proxies = []
+            for url in [PROXY_API_SOCKS, PROXY_FALLBACK_SOCKS]:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 200:
+                                text = await resp.text()
+                                try:
+                                    data = json.loads(text)
+                                except json.JSONDecodeError:
+                                    print(f"[PROXY] Invalid JSON from {url}")
+                                    continue
+                                
+                                if isinstance(data, list):
+                                    for p in data:
+                                        if 'ip' in p and 'port' in p:
+                                            socks_proxies.append({
+                                                'type': 'socks5',
+                                                'host': p['ip'],
+                                                'port': int(p['port']),
+                                                'ping': p.get('ping', 999)
+                                            })
+                                elif isinstance(data, dict) and 'ip' in data:
+                                    socks_proxies.append({
+                                        'type': 'socks5',
+                                        'host': data['ip'],
+                                        'port': int(data['port']),
+                                        'ping': data.get('ping', 999)
+                                    })
+                                if socks_proxies:
+                                    print(f"[PROXY] Fetched {len(socks_proxies)} SOCKS5 proxies from {url}")
+                                    break
+                except Exception as e:
+                    print(f"[PROXY] Failed to fetch SOCKS5 from {url}: {e}")
+            return socks_proxies
+        
+        async def fetch_mtproto():
+            """Fetch MTProto proxies"""
+            mtproto_proxies = []
+            for url in [PROXY_API_MTPROTO, PROXY_FALLBACK_MTPROTO]:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 200:
+                                text = await resp.text()
+                                try:
+                                    data = json.loads(text)
+                                except json.JSONDecodeError:
+                                    print(f"[PROXY] Invalid JSON from {url}")
+                                    continue
+                                
+                                if isinstance(data, list):
+                                    for p in data:
+                                        if 'host' in p and 'port' in p and 'secret' in p:
+                                            mtproto_proxies.append({
+                                                'type': 'mtproto',
+                                                'host': p['host'],
+                                                'port': int(p['port']),
+                                                'secret': p['secret'],
+                                                'ping': p.get('ping', 999)
+                                            })
+                                elif isinstance(data, dict) and 'host' in data:
+                                    mtproto_proxies.append({
+                                        'type': 'mtproto',
+                                        'host': data['host'],
+                                        'port': int(data['port']),
+                                        'secret': data['secret'],
+                                        'ping': data.get('ping', 999)
+                                    })
+                                if mtproto_proxies:
+                                    print(f"[PROXY] Fetched {len(mtproto_proxies)} MTProto proxies from {url}")
+                                    break
+                except Exception as e:
+                    print(f"[PROXY] Failed to fetch MTProto from {url}: {e}")
+            return mtproto_proxies
+        
+        # Fetch both types concurrently
+        results = await asyncio.gather(fetch_socks5(), fetch_mtproto(), return_exceptions=True)
+        
+        for result in results:
+            if isinstance(result, list):
+                proxies.extend(result)
+        
+        # Sort by ping (lowest first)
+        proxies.sort(key=lambda x: x.get('ping', 999))
+        
+        print(f"[PROXY] Total proxies available: {len(proxies)} (SOCKS5 + MTProto)")
+        
+        self._proxy_list = proxies
+        return proxies
+    
+    def _get_next_proxy(self):
+        """Get next proxy from the list (round-robin)"""
+        if not self._proxy_list:
+            return None
+        
+        proxy = self._proxy_list[self._current_proxy_index]
+        self._current_proxy_index = (self._current_proxy_index + 1) % len(self._proxy_list)
+        return proxy
+    
+    def _create_proxy_config(self, proxy_info: dict):
+        """Convert proxy info to Telethon format"""
+        if not proxy_info:
+            return None
+        
+        if proxy_info['type'] == 'socks5':
+            try:
+                import python_socks
+                return (
+                    python_socks.ProxyType.SOCKS5,
+                    proxy_info['host'],
+                    proxy_info['port'],
+                    True,  # rdns
+                    None,  # username
+                    None   # password
+                )
+            except ImportError:
+                print("[PROXY] python-socks not installed, cannot use SOCKS5")
+                return None
+        
+        elif proxy_info['type'] == 'mtproto':
+            # MTProto proxy format for Telethon
+            from telethon.network import connection
+            return (
+                connection.ConnectionTcpMTProxyRandomizedIntermediate,
+                proxy_info['host'],
+                proxy_info['port'],
+                proxy_info['secret']
+            )
+        
+        return None
+    
+    async def _init_clients_with_proxy(self, proxy_config):
+        """Initialize client pool with given proxy"""
+        self.clients = []
+        
         for i in range(self.pool_size):
             session_name = f"{self.session_base}_worker_{i}"
-            client = TelegramClient(
-                session_name,
-                int(API_ID),
-                API_HASH,
-                connection_retries=5,
-                retry_delay=1,
-                flood_sleep_threshold=60
-            )
+            
+            if proxy_config and len(proxy_config) == 4:
+                # MTProto proxy
+                connection_class = proxy_config[0]
+                client = TelegramClient(
+                    session_name,
+                    int(API_ID),
+                    API_HASH,
+                    connection=connection_class,
+                    connection_retries=5,
+                    retry_delay=1,
+                    flood_sleep_threshold=60,
+                    proxy=(proxy_config[1], proxy_config[2], proxy_config[3])
+                )
+            elif proxy_config and len(proxy_config) == 6:
+                # SOCKS5 proxy
+                client = TelegramClient(
+                    session_name,
+                    int(API_ID),
+                    API_HASH,
+                    connection_retries=5,
+                    retry_delay=1,
+                    flood_sleep_threshold=60,
+                    proxy=proxy_config
+                )
+            else:
+                # No proxy
+                client = TelegramClient(
+                    session_name,
+                    int(API_ID),
+                    API_HASH,
+                    connection_retries=5,
+                    retry_delay=1,
+                    flood_sleep_threshold=60
+                )
+            
             self.clients.append(client)
-            print(f"[INIT] Prepared worker {i}: {session_name}")
-
-        # The primary client (worker 0) for general tasks
+        
         self.client = self.clients[0]
 
-    async def start(self):
-        print(f"Starting {self.pool_size} Telegram Clients (Multi-Socket)...")
+    async def _test_single_proxy(self, proxy_info: dict, timeout: int = 15):
+        """
+        Test a single proxy by attempting to connect.
+        Returns (proxy_info, success, error)
+        """
+        proxy_config = self._create_proxy_config(proxy_info)
+        if not proxy_config:
+            return (proxy_info, False, "Failed to create proxy config")
         
-        # Start all clients in parallel, with FloodWait handling
-        for i, client in enumerate(self.clients):
-            max_retries = 3
-            for attempt in range(max_retries):
+        session_name = f"test_proxy_{proxy_info['host']}_{proxy_info['port']}"
+        
+        try:
+            if proxy_info['type'] == 'mtproto':
+                from telethon.network import connection
+                client = TelegramClient(
+                    session_name,
+                    int(API_ID),
+                    API_HASH,
+                    connection=proxy_config[0],
+                    connection_retries=1,
+                    retry_delay=0,
+                    timeout=timeout,
+                    proxy=(proxy_config[1], proxy_config[2], proxy_config[3])
+                )
+            else:
+                client = TelegramClient(
+                    session_name,
+                    int(API_ID),
+                    API_HASH,
+                    connection_retries=1,
+                    retry_delay=0,
+                    timeout=timeout,
+                    proxy=proxy_config
+                )
+            
+            await asyncio.wait_for(client.start(bot_token=BOT_TOKEN), timeout=timeout)
+            await client.disconnect()
+            
+            # Clean up session file
+            import os
+            for ext in ['', '.session']:
                 try:
-                    await client.start(bot_token=BOT_TOKEN)
-                    print(f"[TG] Worker {i} started successfully.")
-                    break
-                except errors.FloodWaitError as e:
-                    wait_time = e.seconds
-                    print(f"[TG] Worker {i} hit FloodWait: Waiting {wait_time} seconds...")
-                    await asyncio.sleep(wait_time + 1) # Wait the required time + 1s buffer
-                except Exception as e:
-                    print(f"[TG] Worker {i} failed to start (attempt {attempt+1}): {e}")
-                    if attempt == max_retries - 1:
-                        print(f"[TG] CRITICAL: Worker {i} could not start after {max_retries} attempts.")
+                    os.remove(f"{session_name}{ext}")
+                except:
+                    pass
+            
+            return (proxy_info, True, None)
+        except asyncio.TimeoutError:
+            return (proxy_info, False, "Timeout")
+        except Exception as e:
+            return (proxy_info, False, str(e))
+        finally:
+            try:
+                await client.disconnect()
+            except:
+                pass
+    
+    async def _find_working_proxy(self, batch_size: int = 10):
+        """
+        Test proxies in batches concurrently.
+        Returns the first working proxy or None.
+        """
+        if not self._proxy_list:
+            return None
+        
+        print(f"[PROXY] Testing {len(self._proxy_list)} proxies in batches of {batch_size}...")
+        
+        for i in range(0, len(self._proxy_list), batch_size):
+            batch = self._proxy_list[i:i + batch_size]
+            print(f"[PROXY] Testing batch {i//batch_size + 1}: proxies {i+1}-{i+len(batch)}")
+            
+            # Test all proxies in batch concurrently
+            tasks = [self._test_single_proxy(p) for p in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Find first working proxy
+            for result in results:
+                if isinstance(result, tuple) and result[1]:  # (proxy_info, success, error)
+                    proxy_info = result[0]
+                    print(f"[PROXY] ✅ Found working proxy: {proxy_info['type']}://{proxy_info['host']}:{proxy_info['port']}")
+                    return proxy_info
+            
+            # Log failed proxies
+            for result in results:
+                if isinstance(result, tuple) and not result[1]:
+                    proxy_info = result[0]
+                    print(f"[PROXY] ❌ {proxy_info['host']}:{proxy_info['port']} - {result[2]}")
+        
+        print("[PROXY] No working proxies found!")
+        return None
+
+    async def start(self):
+        print(f"Starting {self.pool_size} Telegram Clients...")
+        
+        working_proxy = None
+        
+        # Fetch and test proxies if enabled
+        if self._proxy_enabled:
+            print("[PROXY] Proxy enabled, fetching proxy list...")
+            await self._fetch_proxies()
+            
+            if self._proxy_list:
+                working_proxy = await self._find_working_proxy(batch_size=10)
+                if working_proxy:
+                    self._current_proxy = working_proxy
+            
+            if not working_proxy:
+                print("[PROXY] WARNING: No working proxies, connecting directly")
+        
+        # Get proxy config for working proxy
+        proxy_config = self._create_proxy_config(working_proxy) if working_proxy else None
+        
+        # Initialize clients with working proxy
+        await self._init_clients_with_proxy(proxy_config)
+        
+        # Start all clients
+        for i, client in enumerate(self.clients):
+            try:
+                await client.start(bot_token=BOT_TOKEN)
+                print(f"[TG] Worker {i} started successfully.")
+            except errors.FloodWaitError as e:
+                print(f"[TG] Worker {i} hit FloodWait: Waiting {e.seconds} seconds...")
+                await asyncio.sleep(e.seconds + 1)
+                await client.start(bot_token=BOT_TOKEN)
+                print(f"[TG] Worker {i} started after FloodWait.")
+            except Exception as e:
+                print(f"[TG] Worker {i} failed: {e}")
+        
+        if not self.clients or not any([c.is_connected() for c in self.clients]):
+            print("[TG] CRITICAL: No clients connected!")
+            return
+        
+        print(f"[TG] All workers started!")
         
         # Check cryptg
         try:

@@ -42,8 +42,14 @@ class VidsSaveDownloadTask:
     thumbnail: str = ""
     duration: int = 0
     file_path: Optional[str] = None
-    video_path: Optional[str] = None  # Added field
+    video_path: Optional[str] = None
     error: Optional[str] = None
+    # Progress tracking fields
+    speed: str = "0 B/s"
+    eta: str = "--:--"
+    phase: str = "pending"  # pending, downloading, converting, uploading_audio, uploading_video, complete
+    downloaded_bytes: int = 0
+    total_bytes: int = 0
 
 
 # Global task store
@@ -113,13 +119,39 @@ class VidsSaveDownloader:
         loop = asyncio.get_event_loop()
         info = await loop.run_in_executor(None, _fetch_info)
         
-        # Parse artist from title (common format: "Artist - Title")
-        title = info.get("title", "Unknown")
-        artist = "" # Default to empty if not found
+        # Get channel/author as default artist
+        raw_title = info.get("title", "Unknown")
+        channel = info.get("author", "") or info.get("channel", "") or info.get("uploader", "")
+        
+        # Parse artist from title (common formats)
+        title = raw_title
+        artist = channel  # Default to channel name
+        
+        # Common patterns: "Artist - Song Title", "Song Title | Artist", "Song Title by Artist"
         if " - " in title:
             parts = title.split(" - ", 1)
-            artist = parts[0].strip()
-            title = parts[1].strip()
+            # Check if first part looks like artist (shorter, no common suffixes)
+            if len(parts[0]) < 50 and not any(x in parts[0].lower() for x in ["video", "song", "lyric", "official"]):
+                artist = parts[0].strip()
+                title = parts[1].strip()
+        elif " | " in title:
+            parts = title.split(" | ")
+            # Usually the shorter part is artist name
+            if len(parts) >= 2:
+                if len(parts[-1]) < len(parts[0]):
+                    artist = parts[-1].strip()
+                    title = " | ".join(parts[:-1]).strip()
+        
+        # Clean up title - remove common suffixes
+        for suffix in [" (Official Video)", " (Official Audio)", " (Lyric Video)", 
+                       " [Official Video]", " [Official Audio]", " - Video Song",
+                       " | Video Song", " - Lyrical Video", " Full Video"]:
+            if title.endswith(suffix):
+                title = title[:-len(suffix)].strip()
+        
+        # If still no artist, use channel name
+        if not artist:
+            artist = channel if channel else "Unknown Artist"
         
         return {
             "title": title,
@@ -240,6 +272,7 @@ class VidsSaveDownloader:
             
             # Stage 2: Download video
             task.status = VidsSaveDownloadStatus.DOWNLOADING
+            task.phase = "downloading"
             if broadcast_callback:
                 await broadcast_callback("youtube_progress", {
                     "task_id": task_id,
@@ -255,9 +288,12 @@ class VidsSaveDownloader:
             video_path = os.path.join(DOWNLOAD_DIR, video_filename)
             audio_path = os.path.join(DOWNLOAD_DIR, audio_filename)
             
-            # Download video file
+            # Download video file with speed tracking
             download_url = best_video["download_url"]
             total_size = best_video.get("size", 0)
+            task.total_bytes = total_size
+            
+            import time
             
             def _download_video():
                 req = urllib.request.Request(
@@ -268,20 +304,48 @@ class VidsSaveDownloader:
                     }
                 )
                 
+                start_time = time.time()
+                last_update = start_time
+                
                 with urllib.request.urlopen(req, timeout=300) as response:
                     with open(video_path, 'wb') as f:
                         downloaded = 0
-                        chunk_size = 1024 * 1024  # 1 MB chunks
+                        chunk_size = 256 * 1024  # 256KB chunks for more frequent updates
                         while True:
                             chunk = response.read(chunk_size)
                             if not chunk:
                                 break
                             f.write(chunk)
                             downloaded += len(chunk)
+                            task.downloaded_bytes = downloaded
                             
-                            # Calculate progress (15-80% for download)
+                            now = time.time()
+                            elapsed = now - start_time
+                            
+                            # Update speed every 0.3 seconds
+                            if now - last_update >= 0.3:
+                                if elapsed > 0:
+                                    speed = downloaded / elapsed
+                                    if speed > 1024 * 1024:
+                                        task.speed = f"{speed / (1024 * 1024):.1f} MB/s"
+                                    elif speed > 1024:
+                                        task.speed = f"{speed / 1024:.1f} KB/s"
+                                    else:
+                                        task.speed = f"{speed:.0f} B/s"
+                                    
+                                    # Calculate ETA
+                                    if speed > 0 and total_size > 0:
+                                        remaining = total_size - downloaded
+                                        eta_seconds = remaining / speed
+                                        m, s = divmod(int(eta_seconds), 60)
+                                        h, m = divmod(m, 60)
+                                        task.eta = f"{h:02d}:{m:02d}:{s:02d}" if h > 0 else f"{m:02d}:{s:02d}"
+                                
+                                last_update = now
+                            
+                            # Calculate progress (15-75% for download)
                             if total_size > 0:
-                                task.progress = 15 + int((downloaded / total_size) * 65)
+                                task.progress = 15 + int((downloaded / total_size) * 60)
                 
                 return video_path
             
@@ -294,12 +358,15 @@ class VidsSaveDownloader:
             # Stage 3: Convert to audio using FFmpeg
             async with self._conversion_sem:
                 task.status = VidsSaveDownloadStatus.CONVERTING
-                task.progress = 80
+                task.progress = 75
+                task.phase = "converting"
+                task.speed = "Converting..."
+                task.eta = "--:--"
                 if broadcast_callback:
                     await broadcast_callback("youtube_progress", {
                         "task_id": task_id,
                         "status": "converting",
-                        "progress": 80,
+                        "progress": 75,
                         "message": "Converting to audio..."
                     })
                 
@@ -324,9 +391,10 @@ class VidsSaveDownloader:
                     # Re-raise with detail
                     raise Exception(f"Conversion failed (Exit {e.returncode}): {error_msg[-200:]}")
             
-            # Done!
+            # Done with download/convert - set phase to uploading
+            task.progress = 80
+            task.phase = "uploading_audio"
             task.status = VidsSaveDownloadStatus.COMPLETE
-            task.progress = 100
             task.file_path = audio_path
             
             if broadcast_callback:

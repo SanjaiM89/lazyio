@@ -4,8 +4,8 @@ python-multipart
 shazamio
 python-dotenv
 aiohttp
-aiohttp
 telethon
+python-socks[asyncio]
 cryptg
 mutagen
 shazamio
@@ -13,9 +13,6 @@ httpx
 jinja2
 motor
 dnspython
-yt-dlp
-yt-dlp-ejs
-quickjs
 essentia
 faiss-cpu
 numpy
