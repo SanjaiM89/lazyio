@@ -1,12 +1,11 @@
 fastapi
 uvicorn[standard]
 python-multipart
+duckduckgo-search
 shazamio
 python-dotenv
 aiohttp
 aiohttp
-telethon
-cryptg
 mutagen
 shazamio
 httpx
@@ -19,3 +18,5 @@ quickjs
 essentia
 faiss-cpu
 numpy
+aioboto3
+boto3

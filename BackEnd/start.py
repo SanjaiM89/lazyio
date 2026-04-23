@@ -46,7 +46,7 @@ class UvicornManager:
         
         self.process = subprocess.Popen([
             sys.executable, "-m", "uvicorn",
-            "main:app",
+            "app.main:app",
             "--host", "0.0.0.0",
             "--port", str(port),
             "--reload",
