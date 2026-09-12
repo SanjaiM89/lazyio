@@ -137,9 +137,9 @@ const Upload = ({ onUploadComplete }) => {
             <div className="max-w-3xl mx-auto">
                 <div className="text-center mb-12 animate-fade-in">
                     <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
-                        Upload Music & Videos
+                        Upload to Telegram
                     </h1>
-                    <p className="text-white/50">Add your favorite tracks and videos to the library</p>
+                    <p className="text-white/50">Files go straight to your Telegram channel library</p>
                 </div>
 
                 {/* Drop Zone */}

@@ -27,9 +27,20 @@ async def get_songs_page(page: int = 1, limit: int = 20):
 
 @router.delete("/{song_id}")
 async def remove_song(song_id: str):
+    from app.db.crud.songs import get_song_raw_by_id
+
+    raw = await get_song_raw_by_id(song_id)
     success = await delete_song(song_id)
     if not success:
         raise HTTPException(status_code=404, detail="Song not found")
+    # Best-effort: remove the Telegram message as well
+    if raw and raw.get("telegram_message_id"):
+        try:
+            from app.services.telegram import telegram_client
+
+            await telegram_client.delete_message(int(raw["telegram_message_id"]))
+        except Exception as e:
+            print(f"[SONGS] Telegram delete skipped: {e}")
     await notify_update("library_updated")
     return {"status": "success", "message": "Song deleted"}
 

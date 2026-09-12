@@ -30,44 +30,36 @@ class ApiService {
     await http.post(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/play'));
   }
 
-  // YouTube
-  static Future<String> submitYoutubeUrl(String url, String quality) async {
-    final response = await http.post(
-      Uri.parse('${AppConfig.baseUrl}/api/youtube'),
-      headers: {'Content-Type': 'application/json'},
-      body: json.encode({'url': url, 'quality': quality}),
-    );
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      return data['task_id'];
-    } else {
-      throw Exception('Failed to submit YouTube URL');
-    }
-  }
+  // Albums (grouped Telegram library)
 
-  static Future<List<YouTubeTask>> getYoutubeTasks({int page = 1, int limit = 10}) async {
+  static Future<List<Album>> getAlbums({int page = 1, int limit = 20}) async {
     final response = await http.get(
-      Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks?page=$page&limit=$limit'),
+      Uri.parse('${AppConfig.baseUrl}/api/albums?page=$page&limit=$limit'),
     );
     if (response.statusCode == 200) {
       final data = json.decode(response.body);
-      final List<dynamic> tasks = data['tasks'];
-      return tasks.map((json) => YouTubeTask.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load tasks');
+      final List<dynamic> albums = data['albums'] ?? [];
+      return albums.map((j) => Album.fromJson(j)).toList();
     }
+    return [];
   }
 
-  static Future<void> cancelYoutubeTask(String taskId) async {
-    await http.post(Uri.parse('${AppConfig.baseUrl}/api/youtube/cancel/$taskId'));
+  static Future<Album?> getAlbum(String albumId) async {
+    final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/albums/$albumId'));
+    if (response.statusCode == 200) {
+      return Album.fromJson(json.decode(response.body));
+    }
+    return null;
   }
-  
-  static Future<void> deleteYoutubeTask(String taskId) async {
-      await http.delete(Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks/$taskId'));
-  }
-  
-  static Future<void> clearAllYoutubeTasks() async {
-    await http.delete(Uri.parse('${AppConfig.baseUrl}/api/youtube/tasks'));
+
+  static Future<Map<String, dynamic>?> scanTelegramChannel({bool force = false}) async {
+    final response = await http.post(
+      Uri.parse('${AppConfig.baseUrl}/api/telegram/scan?force=$force'),
+    );
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    return null;
   }
   
   static Future<void> uploadFiles(List<String> filePaths) async {

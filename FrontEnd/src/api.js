@@ -114,45 +114,27 @@ export const getStreamUrl = (songId, quality = 'original') => `${API_BASE_URL}/s
 export const getVideoStreamUrl = (songId) => `${API_BASE_URL}/stream/${songId}?type=video`;
 
 
-// ==================== YouTube API ====================
+// ==================== Albums (Telegram-indexed) ====================
 
-export const getYoutubePreview = async (url) => {
-    const response = await api.post('/youtube/preview', { url });
+export const getAlbums = async (page = 1, limit = 20) => {
+    const response = await api.get('/albums', { params: { page, limit } });
     return response.data;
 };
 
-export const submitYoutubeUrl = async (url, quality = '320') => {
-    const response = await api.post('/youtube', { url, quality });
+export const getAlbum = async (albumId) => {
+    const response = await api.get(`/albums/${albumId}`);
     return response.data;
 };
 
-export const getYoutubeStatus = async (taskId) => {
-    const response = await api.get(`/youtube/status/${taskId}`);
+// ==================== Telegram channel ====================
+
+export const getTelegramStatus = async () => {
+    const response = await api.get('/telegram/status');
     return response.data;
 };
 
-export const cancelYoutubeDownload = async (taskId) => {
-    const response = await api.post(`/youtube/cancel/${taskId}`);
-    return response.data;
-};
-
-export const listYoutubeTasks = async (page = 1, limit = 10) => {
-    const response = await api.get('/youtube/tasks', { params: { page, limit } });
-    return response.data;
-};
-
-export const clearYoutubeTasks = async () => {
-    const response = await api.delete('/youtube/tasks');
-    return response.data;
-};
-
-export const deleteYoutubeTask = async (taskId) => {
-    const response = await api.delete(`/youtube/tasks/${taskId}`);
-    return response.data;
-};
-
-export const getYoutubeFormats = async (url) => {
-    const response = await api.post('/youtube/formats', { url });
+export const scanTelegramChannel = async (force = false) => {
+    const response = await api.post('/telegram/scan', null, { params: { force } });
     return response.data;
 };
 

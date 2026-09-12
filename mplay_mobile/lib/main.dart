@@ -6,7 +6,7 @@ import 'constants.dart';
 import 'music_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
-import 'screens/youtube_screen.dart';
+import 'screens/albums_screen.dart';
 import 'screens/upload_screen.dart';
 import 'websocket_service.dart';
 import 'widgets/mini_player.dart';
@@ -119,7 +119,6 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
-  String? _youtubeQuery;
   late WebSocketService _wsService;
   
   // Pages key to force refresh on WS update
@@ -152,7 +151,7 @@ class _MainScreenState extends State<MainScreen> {
       _checkAndRestorePlayer();
     });
     
-    // Task updates are handled by YouTubeScreen directly via a stream
+    // Task updates are handled per-screen via websocket library refresh
     _wsService.onMessage = (msg) {
       // Backwards compatibility - string events
       if (msg == 'library_updated' || msg == 'song_added') {
@@ -194,9 +193,6 @@ class _MainScreenState extends State<MainScreen> {
   void _handleNavigation(int index, [String? query]) {
     setState(() {
       _selectedIndex = index;
-      if (query != null) {
-        _youtubeQuery = query;
-      }
     });
   }
 
@@ -212,7 +208,7 @@ class _MainScreenState extends State<MainScreen> {
     final pages = [
       HomeScreen(key: _homeKey, onNavigate: _handleNavigation),
       const LibraryScreen(), // No key needed as it handles its own state via Provider
-      YouTubeScreen(initialQuery: _youtubeQuery),
+      const AlbumsScreen(),
       const UploadScreen(),
     ];
 
@@ -268,7 +264,7 @@ class _MainScreenState extends State<MainScreen> {
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
           BottomNavigationBarItem(icon: Icon(Icons.library_music_rounded), label: 'Library'),
-          BottomNavigationBarItem(icon: Icon(Icons.play_circle_fill_rounded), label: 'YouTube'),
+          BottomNavigationBarItem(icon: Icon(Icons.album_rounded), label: 'Albums'),
           BottomNavigationBarItem(icon: Icon(Icons.upload_file_rounded), label: 'Upload'),
         ],
       ),

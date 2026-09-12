@@ -23,6 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Map<String, dynamic>? _data;
   List<Playlist> _appPlaylists = [];
+  List<Album> _albums = [];
   bool _loading = true;
 
   @override
@@ -33,16 +34,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadData() async {
     try {
-      // Load homepage data and playlists in parallel
+      // Load homepage data, playlists and albums in parallel
       final results = await Future.wait([
         ApiService.getHomepage(),
         ApiService.getAppPlaylists(),
+        ApiService.getAlbums(limit: 10),
       ]);
       
       if (mounted) {
         setState(() {
           _data = results[0] as Map<String, dynamic>;
           _appPlaylists = results[1] as List<Playlist>;
+          _albums = results[2] as List<Album>;
           _loading = false;
         });
       }
@@ -307,6 +310,54 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 32),
           ],
           
+          // Albums (Telegram-indexed)
+          if (_albums.isNotEmpty) ...[
+            const Text("Albums", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 180,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _albums.length,
+                itemBuilder: (context, index) {
+                  final album = _albums[index];
+                  return GestureDetector(
+                    onTap: () => widget.onNavigate(2),
+                    child: Container(
+                      width: 140,
+                      margin: const EdgeInsets.only(right: 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: album.coverArt != null
+                                    ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
+                                    : null,
+                                color: Colors.white10,
+                              ),
+                              child: album.coverArt == null
+                                  ? const Center(child: Icon(Icons.album, size: 40, color: Colors.white24))
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          Text("${album.songCount} Songs",
+                              style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+
           // Quick Actions
           const Text("Quick Actions", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
@@ -318,7 +369,7 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisSpacing: 12,
             childAspectRatio: 1.5,
             children: [
-              _buildQuickAction('YouTube', Icons.play_arrow_rounded, Colors.red, () => widget.onNavigate(2)),
+              _buildQuickAction('Albums', Icons.album_rounded, Colors.red, () => widget.onNavigate(2)),
               _buildQuickAction('Upload', Icons.upload_file_rounded, Colors.blue, () => widget.onNavigate(3)),
               _buildQuickAction('Library', Icons.library_music_rounded, Colors.purple, () => widget.onNavigate(1)),
               // For Playlists we could add navigation to a playlists screen, but for now just navigate to Library

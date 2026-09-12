@@ -2,14 +2,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
-import os
 
 from app.db.connection import Database
 from app.db.crud.app_playlists import init_default_playlists
-from app.db.crud.songs import get_all_songs
+from app.db.crud.songs import get_all_songs, ensure_song_indexes
 from app.db.crud.likes import get_liked_songs
 from app.db.crud.ai_cache import update_ai_cache
-from app.services.s3 import init_s3
 from app.ai.recommender import audio_recommender
 from app.ai.mistral import get_homepage_recommendations
 
@@ -18,8 +16,9 @@ from app.api.routes.upload import router as upload_router
 from app.api.routes.stream import router as stream_router
 from app.api.routes.songs import router as songs_router
 from app.api.routes.playlists import router as playlists_router
-from app.api.routes.youtube import router as youtube_router
 from app.api.routes.recommend import router as recommend_router
+from app.api.routes.telegram import router as telegram_router
+from app.api.routes.albums import router as albums_router
 
 
 async def refresh_ai_recommendations():
@@ -52,27 +51,28 @@ async def lifespan(app: FastAPI):
     # Connect DB implicitly done by Database.connect() on import
     Database.connect()
 
-    youtube_temp_dir = "temp_uploads/youtube"
-    if os.path.exists(youtube_temp_dir):
-        import shutil
-
-        try:
-            shutil.rmtree(youtube_temp_dir)
-            os.makedirs(youtube_temp_dir, exist_ok=True)
-            print(f"[STARTUP] Cleaned {youtube_temp_dir} directory")
-        except Exception as e:
-            print(f"[STARTUP] Failed to clean temp directory: {e}")
-
     await init_default_playlists()
     print("[STARTUP] Fast init complete - server ready to accept connections")
 
     async def delayed_init():
         await asyncio.sleep(1)
         try:
-            print("[STARTUP] Initializing S3...")
-            await init_s3()
+            print("[STARTUP] Ensuring song indexes...")
+            await ensure_song_indexes()
         except Exception as e:
-            print(f"[STARTUP] Failed to initialize S3: {e}")
+            print(f"[STARTUP] Index ensure warning: {e}")
+
+        try:
+            print("[STARTUP] Starting Telegram indexer...")
+            from app.services.telegram import telegram_client
+
+            await telegram_client.start()
+            from app.services.channel_indexer import scan_source_channel
+
+            result = await scan_source_channel()
+            print(f"[STARTUP] Telegram scan: {result}")
+        except Exception as e:
+            print(f"[STARTUP] Telegram init skipped: {e}")
 
         try:
             print("[STARTUP] Loading feature vectors...")
@@ -86,6 +86,12 @@ async def lifespan(app: FastAPI):
             print(f"[STARTUP] Feature load warning: {e}")
 
         asyncio.create_task(refresh_ai_recommendations())
+        try:
+            from app.services.channel_indexer import start_periodic_rescan
+
+            asyncio.create_task(start_periodic_rescan(interval_seconds=600))
+        except Exception as e:
+            print(f"[STARTUP] Periodic rescan not started: {e}")
 
     asyncio.create_task(delayed_init())
 
@@ -109,7 +115,8 @@ app.include_router(upload_router)
 app.include_router(stream_router)
 app.include_router(songs_router)
 app.include_router(playlists_router)
-app.include_router(youtube_router)
+app.include_router(telegram_router)
+app.include_router(albums_router)
 app.include_router(recommend_router)
 
 

@@ -18,9 +18,58 @@ from app.db.crud.app_playlists import (
     create_app_playlist,
 )
 from app.ai.recommender import audio_recommender
-from app.ai.mistral import get_music_recommendations, get_recommendations
+from app.ai.mistral import (
+    get_music_recommendations,
+    get_recommendations,
+    get_homepage_recommendations,
+)
+from app.db.crud.ai_cache import get_ai_cache, update_ai_cache
 
 router = APIRouter(tags=["recommend"])
+
+
+@router.get("/api/home")
+async def api_home():
+    """Homepage payload expected by web + Flutter clients."""
+    recently = await get_recently_played(limit=5)
+    cache = await get_ai_cache()
+    ai_name = "AI Mix"
+    ai_songs = []
+    recommendations = []
+    last_updated = None
+    if cache:
+        ai_name = cache.get("ai_playlist_name", ai_name)
+        recommendations = cache.get("recommendations", [])
+        last_updated = cache.get("updated_at")
+        for sid in cache.get("ai_playlist_songs", []):
+            song = await get_song_by_id(sid)
+            if song:
+                ai_songs.append(song)
+    return {
+        "recently_played": recently,
+        "ai_playlist": {"name": ai_name, "songs": ai_songs},
+        "recommendations": recommendations,
+        "last_updated": str(last_updated) if last_updated else None,
+    }
+
+
+async def _refresh_homepage_cache():
+    all_songs = await get_all_songs()
+    if not all_songs:
+        return
+    liked_songs = await get_liked_songs()
+    result = await get_homepage_recommendations(all_songs, liked_songs)
+    await update_ai_cache(
+        recommendations=result["recommendations"],
+        ai_playlist_name=result["ai_playlist"]["name"],
+        ai_playlist_songs=result["ai_playlist"]["song_ids"],
+    )
+
+
+@router.post("/api/home/refresh")
+async def api_home_refresh(background_tasks: BackgroundTasks):
+    background_tasks.add_task(_refresh_homepage_cache)
+    return {"status": "started"}
 
 
 @router.post("/api/recommend")

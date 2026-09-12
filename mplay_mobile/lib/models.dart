@@ -8,8 +8,7 @@ class Song {
   final String? thumbnail;
   final String fileName;
   final String? mediaType; // 'audio' or 'video'
-  final String? audioTelegramId;
-  final String? videoTelegramId;
+  final int? telegramMessageId;
   final bool hasVideo;
 
   Song({
@@ -22,20 +21,25 @@ class Song {
     this.thumbnail,
     required this.fileName,
     this.mediaType,
-    this.audioTelegramId,
-    this.videoTelegramId,
+    this.telegramMessageId,
     this.hasVideo = false,
   });
 
-  bool get isVideo => mediaType == 'video' || 
+  bool get isVideo => mediaType == 'video' ||
     fileName.toLowerCase().endsWith('.mp4') ||
     fileName.toLowerCase().endsWith('.mkv') ||
     fileName.toLowerCase().endsWith('.webm');
 
   factory Song.fromJson(Map<String, dynamic> json) {
-    // Robust video detection: check flag OR existence of video ID
+    // Telegram-backed library: message id is the stream key
+    int? tgId;
+    final rawTg = json['telegram_message_id'] ?? json['audio_telegram_id'];
+    if (rawTg is not null) {
+      tgId = rawTg is int ? rawTg : int.tryParse(rawTg.toString());
+    }
+    // Robust video detection: check flag OR existence of video id
     final bool hasVideo = json['has_video'] == true || json['video_telegram_id'] != null;
-    
+
     // Determine media type: prefer explicit video if hasVideo is true
     String? mediaType = json['media_type'];
     if (hasVideo && (mediaType == null || mediaType == 'audio')) {
@@ -48,12 +52,11 @@ class Song {
       artist: json['artist'] ?? 'Unknown Artist',
       album: json['album'] ?? '',
       duration: (json['duration'] ?? 0).toDouble(),
-      coverArt: json['cover_art'] ?? json['thumbnail'], // Fallback to thumbnail for YouTube songs
+      coverArt: json['cover_art'] ?? json['thumbnail'],
       thumbnail: json['thumbnail'],
       fileName: json['file_name'] ?? '',
       mediaType: mediaType,
-      audioTelegramId: json['audio_telegram_id'],
-      videoTelegramId: json['video_telegram_id'],
+      telegramMessageId: tgId,
       hasVideo: hasVideo,
     );
   }
@@ -69,63 +72,44 @@ class Song {
       'thumbnail': thumbnail,
       'file_name': fileName,
       'media_type': mediaType,
-      'audio_telegram_id': audioTelegramId,
-      'video_telegram_id': videoTelegramId,
+      'telegram_message_id': telegramMessageId,
       'has_video': hasVideo,
     };
   }
 }
 
 
-class YouTubeTask {
-  final String taskId;
-  final String url;
-  final String status;
-  final double progress;
-  final String? title;
-  final String? error;
-  final Map<String, dynamic>? uploadInfo;
-  final String? speed;
-  final String? eta;
-  final int? totalBytes;
-  final int? downloadedBytes;
-  final String? songId;
-  final String? mediaType; // 'audio' or 'video'
-  final String? quality;
+class Album {
+  final String id;
+  final String name;
+  final String? artist;
+  final String? coverArt;
+  final int songCount;
+  final List<String> songIds;
+  final List<Song>? songs;
 
-  YouTubeTask({
-    required this.taskId,
-    required this.url,
-    required this.status,
-    required this.progress,
-    this.title,
-    this.error,
-    this.uploadInfo,
-    this.speed,
-    this.eta,
-    this.totalBytes,
-    this.downloadedBytes,
-    this.songId,
-    this.mediaType,
-    this.quality,
+  Album({
+    required this.id,
+    required this.name,
+    this.artist,
+    this.coverArt,
+    required this.songCount,
+    required this.songIds,
+    this.songs,
   });
 
-  factory YouTubeTask.fromJson(Map<String, dynamic> json) {
-    return YouTubeTask(
-      taskId: json['task_id'],
-      url: json['url'],
-      status: json['status'],
-      progress: (json['progress'] ?? 0).toDouble(),
-      title: json['title'],
-      error: json['error'],
-      uploadInfo: json['upload_info'],
-      speed: json['speed'],
-      eta: json['eta'],
-      totalBytes: json['total'],
-      downloadedBytes: json['downloaded'],
-      songId: json['song_id'],
-      mediaType: json['media_type'],
-      quality: json['quality'],
+  factory Album.fromJson(Map<String, dynamic> json) {
+    final songsJson = json['songs'] as List?;
+    return Album(
+      id: json['id'] ?? '',
+      name: json['name'] ?? 'Unknown Album',
+      artist: json['artist'],
+      coverArt: json['cover_art'],
+      songCount: (json['song_count'] ?? (songsJson?.length ?? 0)) as int,
+      songIds: List<String>.from(json['song_ids'] ?? []),
+      songs: songsJson != null && songsJson.isNotEmpty && songsJson.first is Map
+          ? songsJson.map((j) => Song.fromJson(j as Map<String, dynamic>)).toList()
+          : null,
     );
   }
 }

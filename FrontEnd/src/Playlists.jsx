@@ -17,7 +17,7 @@ const Playlists = ({ onPlaySong, onNavigate, onOpenPlaylistModal }) => {
         setLoading(true);
         try {
             const data = await getPlaylists(1, 100);
-            setPlaylists(data.items || []);
+            setPlaylists(data.playlists || data.items || []);
         } catch (err) {
             console.error(err);
         } finally {

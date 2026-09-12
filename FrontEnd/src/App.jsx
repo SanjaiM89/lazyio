@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { getSongs, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
 import Player from './Player';
 import Upload from './Upload';
-import YouTube from './YouTube';
+import Albums from './Albums';
 import Home from './Home';
 import Playlists from './Playlists';
 import AddToPlaylistModal from './AddToPlaylistModal';
@@ -17,7 +17,6 @@ function App() {
   const [view, setView] = useState('home');
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [youtubeQuery, setYoutubeQuery] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Playlist Modal State
@@ -110,17 +109,16 @@ function App() {
     setView('nowplaying');
   };
 
-  const handleNavigate = (viewId, query = '') => {
+  const handleNavigate = (viewId) => {
     setView(viewId);
-    if (query) setYoutubeQuery(query);
   };
 
   const navItems = [
     { id: 'home', label: 'Home', icon: '🏠' },
     { id: 'nowplaying', label: 'Now Playing' },
     { id: 'playlist', label: 'Library' }, // Keeping ID 'playlist' for Library view legacy, but label is Library
+    { id: 'albums', label: 'Albums' },
     { id: 'playlists', label: 'Playlists' }, // New Playlists view
-    { id: 'youtube', label: 'YouTube', icon: '🎬' },
     { id: 'upload', label: 'Upload' },
   ];
 
@@ -179,7 +177,7 @@ function App() {
             onOpenPlaylistModal={handleAddToPlaylist}
           />
         )}
-        {view === 'youtube' && <YouTube onDownloadComplete={handleUploadComplete} initialQuery={youtubeQuery} />}
+        {view === 'albums' && <Albums onPlaySong={handlePlaySong} />}
         {view === 'upload' && <Upload onUploadComplete={handleUploadComplete} />}
         {view === 'playlists' && <Playlists onPlaySong={handlePlaySong} onNavigate={handleNavigate} onOpenPlaylistModal={handleAddToPlaylist} />}
 

@@ -7,13 +7,13 @@
 ## ✨ Features
 
 *   **Premium UI**: Glassmorphism design inspired by Apple Music and Spotify.
-*   **Unlimited Storage**: Uses Telegram as a robust, specialized backend for storing audio files.
+*   **Unlimited Storage**: Uses a Telegram channel as a robust backend for storing audio files (auto-indexed on startup).
 *   **AI Recommendations**: Integrated with **Mistral AI** to suggest *new* songs based on your listening history (deduplicated recommendations).
-*   **YouTube Downloader**: Download individual songs or entire playlists directly from YouTube.
+*   **Telegram Library**: Set `TELEGRAM_SOURCE_CHANNEL` in `.env` — the backend scans the channel, indexes tracks in MongoDB, and groups same-named music into albums/playlists.
 *   **Live Library**: Real-time updates across devices using WebSockets.
 *   **Playlist Management**: Create playlists, add/rename/delete songs with a native feel.
 *   **Background Playback**: Full audio service support with notification controls.
-*   **Cross-Platform**: Built with Flutter (Android, iOS, Linux, Web).
+*   **Cross-Platform**: Built with Flutter (Android, iOS, Linux, Web) + a React web player.
 
 ## 🏗️ Architecture
 
@@ -60,6 +60,10 @@ The project consists of two main parts:
     API_ID=your_telegram_api_id
     API_HASH=your_telegram_api_hash
     BOT_TOKEN=your_telegram_bot_token
+    TELEGRAM_API_ID=your_telegram_api_id
+    TELEGRAM_API_HASH=your_telegram_api_hash
+    TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+    TELEGRAM_SOURCE_CHANNEL=@your_channel_username
     MONGO_DB_URI=mongodb://localhost:27017
     MISTRAL_API_KEY=your_mistral_api_key
     ```
@@ -126,7 +130,7 @@ Instead of setting up Python manually, you can use the pre-built Docker image.
 
 *   **Frontend**: Flutter, Provider, Just Audio, Glassmorphism
 *   **Backend**: Python, FastAPI, Uvicorn, Motor (Async MongoDB)
-*   **External APIs**: Telegram (Telethon), Mistral AI, YouTube (yt-dlp)
+*   **External APIs**: Telegram (Telethon), Mistral AI
 
 ## 🙏 Acknowledgements
 

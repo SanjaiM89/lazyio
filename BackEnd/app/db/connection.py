@@ -8,13 +8,13 @@ class Database:
 
     @classmethod
     def connect(cls):
-        if not cls.client:
+        if cls.client is None:
             cls.client = motor.motor_asyncio.AsyncIOMotorClient(settings.DATABASE_URL)
             cls.db = cls.client.get_database(settings.DATABASE_NAME)
 
     @classmethod
     def get_collection(cls, name: str):
-        if not cls.db:
+        if cls.db is None:
             cls.connect()
         return cls.db.get_collection(name)
 
@@ -25,5 +25,6 @@ Database.connect()
 # Expose collections directly for convenience, or we can use Database.get_collection inside crud.
 songs_collection = Database.get_collection("songs")
 playlists_collection = Database.get_collection("playlists")
-tasks_collection = Database.get_collection("youtube_tasks")
+albums_collection = Database.get_collection("albums")
+telegram_state_collection = Database.get_collection("telegram_state")
 history_collection = Database.get_collection("history")

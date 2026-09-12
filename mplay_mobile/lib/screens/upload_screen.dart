@@ -75,9 +75,9 @@ class _UploadScreenState extends State<UploadScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Upload Music", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            const Text("Upload to Telegram", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            const Text("Add files from your device", style: TextStyle(color: Colors.white54)),
+            const Text("Files go straight to your Telegram channel library", style: TextStyle(color: Colors.white54)),
             const SizedBox(height: 32),
             
             // Upload Area

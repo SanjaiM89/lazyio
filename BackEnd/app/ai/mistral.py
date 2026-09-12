@@ -423,3 +423,36 @@ def get_fallback_queue(
     return _fallback_recommendations(
         current_song, liked_songs, all_songs, exclude_ids, limit
     )
+
+
+async def get_recommendations(limit: int = 10) -> List[Dict]:
+    """Return recommended song dicts for GET /api/recommendations.
+
+    Prefers liked songs, then fills with the most recent library tracks.
+    """
+    try:
+        from app.db.crud.songs import get_all_songs
+        from app.db.crud.likes import get_liked_songs
+
+        all_songs = await get_all_songs()
+        if not all_songs:
+            return []
+        liked = await get_liked_songs()
+        recs: List[Dict] = []
+        seen = set()
+        for song in liked:
+            if song.get("id") not in seen:
+                recs.append(song)
+                seen.add(song.get("id"))
+            if len(recs) >= limit:
+                break
+        for song in all_songs:
+            if len(recs) >= limit:
+                break
+            if song.get("id") not in seen:
+                recs.append(song)
+                seen.add(song.get("id"))
+        return recs
+    except Exception as e:
+        print(f"[AI] get_recommendations failed: {e}")
+        return []

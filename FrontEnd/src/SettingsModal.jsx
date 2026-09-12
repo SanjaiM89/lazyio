@@ -1,13 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Modal from './Modal';
-import api from './api';
+import { getTelegramStatus, scanTelegramChannel } from './api';
 
 const SettingsModal = ({ open, onClose }) => {
     const [ip, setIp] = useState('localhost');
     const [port, setPort] = useState('8000');
-    const [cookiesStatus, setCookiesStatus] = useState(null);
-    const [uploading, setUploading] = useState(false);
-    const fileInputRef = useRef(null);
+    const [tgStatus, setTgStatus] = useState(null);
+    const [scanning, setScanning] = useState(false);
 
     useEffect(() => {
         if (open) {
@@ -15,48 +14,20 @@ const SettingsModal = ({ open, onClose }) => {
             const savedPort = localStorage.getItem('backend_port') || '8000';
             setIp(savedIp);
             setPort(savedPort);
-            checkCookiesStatus();
+            getTelegramStatus().then(setTgStatus).catch(() => setTgStatus(null));
         }
     }, [open]);
 
-    const checkCookiesStatus = async () => {
+    const handleRescan = async () => {
+        setScanning(true);
         try {
-            const res = await api.get('/settings/cookies');
-            setCookiesStatus(res.data);
+            const res = await scanTelegramChannel(false);
+            alert(`Scan complete: ${res.added} new, ${res.scanned} scanned.`);
+            setTgStatus(await getTelegramStatus());
         } catch (err) {
-            console.error('Failed to check cookies status:', err);
-            setCookiesStatus({ exists: false });
-        }
-    };
-
-    const handleCookiesUpload = async (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        setUploading(true);
-        const formData = new FormData();
-        formData.append('file', file);
-
-        try {
-            await api.post('/settings/cookies', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            alert('Cookies uploaded successfully!');
-            checkCookiesStatus();
-        } catch (err) {
-            alert('Failed to upload cookies: ' + (err.response?.data?.detail || err.message));
+            alert('Rescan failed: ' + (err.response?.data?.detail || err.message));
         } finally {
-            setUploading(false);
-            if (fileInputRef.current) fileInputRef.current.value = '';
-        }
-    };
-
-    const handleDeleteCookies = async () => {
-        try {
-            await api.delete('/settings/cookies');
-            setCookiesStatus({ exists: false });
-        } catch (err) {
-            alert('Failed to delete cookies');
+            setScanning(false);
         }
     };
 
@@ -99,43 +70,27 @@ const SettingsModal = ({ open, onClose }) => {
                     </div>
                 </div>
 
-                {/* YouTube Cookies */}
+                {/* Telegram source channel */}
                 <div className="space-y-4">
-                    <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider">YouTube Cookies</h3>
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-sm p-3 rounded-xl">
-                        <p>Upload cookies.txt to bypass YouTube bot detection on hosted servers.</p>
-                        <p className="opacity-70 mt-1">Export using browser extension: "Get cookies.txt LOCALLY"</p>
+                    <h3 className="text-sm font-semibold text-white/70 uppercase tracking-wider">Telegram Library</h3>
+                    <div className="bg-purple-500/10 border border-purple-500/20 text-purple-200 text-sm p-3 rounded-xl">
+                        <p>Music is indexed from the Telegram source channel configured on the backend (.env).</p>
+                        {tgStatus && (
+                            <p className="opacity-70 mt-1">
+                                Channel: {tgStatus.channel || 'not configured'}
+                                {tgStatus.state?.last_scan_at
+                                    ? ` • last scan ${new Date(tgStatus.state.last_scan_at * 1000).toLocaleString()}`
+                                    : ''}
+                            </p>
+                        )}
                     </div>
-
-                    {cookiesStatus?.exists ? (
-                        <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-xl">
-                            <div>
-                                <p className="text-green-400 text-sm font-medium">✓ Cookies uploaded</p>
-                                <p className="text-white/50 text-xs">Updated: {new Date(cookiesStatus.updated_at).toLocaleString()}</p>
-                            </div>
-                            <button
-                                onClick={handleDeleteCookies}
-                                className="px-3 py-1 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition"
-                            >
-                                Delete
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-between p-3 bg-white/5 border border-white/10 rounded-xl">
-                            <p className="text-white/50 text-sm">No cookies file uploaded</p>
-                            <label className="px-3 py-1 text-xs bg-pink-500/20 text-pink-400 rounded-lg hover:bg-pink-500/30 transition cursor-pointer">
-                                {uploading ? 'Uploading...' : 'Upload'}
-                                <input
-                                    ref={fileInputRef}
-                                    type="file"
-                                    accept=".txt"
-                                    onChange={handleCookiesUpload}
-                                    className="hidden"
-                                    disabled={uploading}
-                                />
-                            </label>
-                        </div>
-                    )}
+                    <button
+                        onClick={handleRescan}
+                        disabled={scanning}
+                        className="px-4 py-2 rounded-xl bg-purple-500/20 text-purple-200 hover:bg-purple-500/30 transition disabled:opacity-50 text-sm"
+                    >
+                        {scanning ? 'Scanning...' : 'Rescan Telegram channel'}
+                    </button>
                 </div>
             </div>
             <Modal.Actions>
