@@ -35,19 +35,17 @@ jobs:
         run: |
           flutter build ios --release --no-codesign
 
-          # Create IPA manually from the build output
           mkdir -p build/ios/ipa/Payload
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           cd build/ios/ipa
-          zip -r ../../../${{ env.APP_NAME }}.ipa Payload
-          cd ../../..
-          ls -lh build/ios/ipa/*.ipa
+          zip -qr mPlay.ipa Payload
+          ls -lh mPlay.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: mplay-ipa-${{ github.run_number }}
-          path: ${{ env.PROJECT_PATH }}/build/ios/ipa/*.ipa
+          path: ${{ env.PROJECT_PATH }}/build/ios/ipa/mPlay.ipa
           retention-days: 14
 
       - name: Done
