@@ -5,6 +5,7 @@ on:
 
 env:
   PROJECT_PATH: mplay_mobile
+  APP_NAME: mPlay
 
 jobs:
   build-ios:
@@ -29,9 +30,18 @@ jobs:
         working-directory: ${{ env.PROJECT_PATH }}
         run: flutter pub get
 
-      - name: Build IPA (unsigned)
+      - name: Build iOS archive
         working-directory: ${{ env.PROJECT_PATH }}
-        run: flutter build ipa --release --no-codesign
+        run: |
+          flutter build ios --release --no-codesign
+
+          # Create IPA manually from the build output
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -r ../../../${{ env.APP_NAME }}.ipa Payload
+          cd ../../..
+          ls -lh build/ios/ipa/*.ipa
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -41,4 +51,12 @@ jobs:
           retention-days: 14
 
       - name: Done
-        run: echo "IPA built! Download from Artifacts." >> $GITHUB_STEP_SUMMARY
+        run: |
+          echo "## iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Install on iPad" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the .ipa from **Artifacts** below" >> $GITHUB_STEP_SUMMARY
+          echo "2. Install via **AltStore** or **Sideloadly**" >> $GITHUB_STEP_SUMMARY
+          echo "   - [AltStore](https://altstore.io/) (PC/Mac)" >> $GITHUB_STEP_SUMMARY
+          echo "   - [Sideloadly](https://sideloadly.io/) (PC)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Refreshes every 7 days with free Apple ID" >> $GITHUB_STEP_SUMMARY
