@@ -96,6 +96,7 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     mime_type = info.get("mime_type") or "audio/mpeg"
     media = info["media"]
     media_type = media.__class__.__name__ if media is not None else "None"
+    range_header = request.headers.get("range")
 
     print(f"[STREAM] {song_id} msg={message_id} size={file_size} mime={mime_type} media={media_type} range={range_header!r}")
 
@@ -107,7 +108,6 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
         print(f"[STREAM] Refusing to stream {song_id} (msg={message_id}): file_size={file_size}")
         raise HTTPException(status_code=404, detail=f"Telegram file has no size (size={file_size})")
 
-    range_header = request.headers.get("range")
     start = 0
     end = file_size - 1
     status_code = 200
