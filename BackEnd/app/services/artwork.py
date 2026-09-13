@@ -107,6 +107,14 @@ async def _raw_search(query: str) -> list:
                     f"HTTP 429 for {query!r} (pausing lookups "
                     f"{_THROTTLE_PAUSE_SECONDS:.0f}s)"
                 )
+            if resp.status_code == 403:
+                # Apple is rate-blocking this client IP: back off like a
+                # 429 instead of hammering every song through the block.
+                _throttled_until = _time.monotonic() + _THROTTLE_PAUSE_SECONDS
+                raise TransientStoreError(
+                    f"HTTP 403 for {query!r} (client blocked, pausing lookups "
+                    f"{_THROTTLE_PAUSE_SECONDS:.0f}s)"
+                )
             if resp.status_code != 200:
                 raise TransientStoreError(f"HTTP {resp.status_code} for {query!r}")
             return resp.json().get("results", [])

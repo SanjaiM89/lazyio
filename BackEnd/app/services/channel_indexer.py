@@ -45,10 +45,11 @@ async def _enrich_from_store(info: dict) -> bool:
     changed = False
     try:
         meta = await fetch_track_meta(info.get("title", ""), info.get("artist", ""))
-    except TransientStoreError as e:
-        # Transport failure (timeout / rate-limit / HTTP error): do NOT mark
+    except TransientStoreError:
+        # Transport failure (timeout / rate-limit / block): do NOT mark
         # checked — the next scan must retry instead of blacklisting the song.
-        print(f"[INDEXER] transient store error, will retry next scan: {e}")
+        # (Not logged per-song: when Apple blocks the client IP this would
+        # spam thousands of lines; the scan summary reports totals.)
         info["meta_checked"] = False
         info["meta_match"] = False
         return False
