@@ -95,10 +95,17 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     file_size = info["file_size"]
     mime_type = info.get("mime_type") or "audio/mpeg"
     media = info["media"]
+    media_type = type(media).__name__ if media is not None else "None"
+
+    print(f"[STREAM] {song_id} msg={message_id} size={file_size} mime={mime_type} media={media_type} range={range_header!r}")
 
     if not media:
         print(f"[STREAM] Media object is None for {song_id} (msg={message_id})")
         raise HTTPException(status_code=404, detail="Telegram media object is None")
+
+    if not file_size or file_size <= 0:
+        print(f"[STREAM] Refusing to stream {song_id} (msg={message_id}): file_size={file_size}")
+        raise HTTPException(status_code=404, detail=f"Telegram file has no size (size={file_size})")
 
     range_header = request.headers.get("range")
     start = 0
@@ -120,17 +127,23 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     length = end - start + 1
 
     async def gen():
+        yielded = 0
+        chunks = 0
         try:
             async for chunk in telegram_client.stream_file(
                 message_id, offset=start, limit=length,
                 media=media, file_size=file_size,
             ):
                 if await request.is_disconnected():
+                    print(f"[STREAM] {song_id}: client disconnected after {yielded} bytes")
                     return
+                yielded += len(chunk)
+                chunks += 1
                 yield chunk
         except Exception as e:
-            print(f"[STREAM] Error streaming {song_id} (msg={message_id}): {e}")
+            print(f"[STREAM] {song_id} (msg={message_id}): EXCEPTION after {yielded} bytes in {chunks} chunks: {type(e).__name__}: {e}")
             return
+        print(f"[STREAM] {song_id} (msg={message_id}): done, sent {yielded}/{length} bytes in {chunks} chunks")
 
     headers = {
         "Accept-Ranges": "bytes",

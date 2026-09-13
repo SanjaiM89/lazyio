@@ -347,6 +347,7 @@ class TelegramClientWrapper:
 
         while remaining > 0:
             retries = 0
+            progress_before = current_offset
             while retries < MAX_RETRIES:
                 try:
                     async for chunk in client.iter_download(
@@ -382,8 +383,14 @@ class TelegramClientWrapper:
                     except Exception:
                         if retries >= MAX_RETRIES:
                             raise
-            else:
-                break
+            if current_offset == progress_before:
+                # iter_download returned nothing without error: yielding
+                # nothing more would hang the request forever (browser
+                # retries the same URL again and again). Fail loudly.
+                raise RuntimeError(
+                    f"Telegram returned 0 bytes for msg {message_id} "
+                    f"at offset {current_offset} (file_size={file_size})"
+                )
 
     async def file_info(self, message_id: int) -> Optional[dict]:
         try:
