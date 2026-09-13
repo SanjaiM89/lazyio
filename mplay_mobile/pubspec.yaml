@@ -4,7 +4,7 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: '>=3.0.0 <4.0.0'
+  sdk: '>=3.5.0 <4.0.0'
 
 dependencies:
   flutter:
@@ -39,9 +39,6 @@ flutter_icons:
   ios: true
   image_path: "assets/icon/icon.png"
   min_sdk_android: 21
-
-dependency_overrides:
-  win32: ^6.4.0
 
 flutter:
   uses-material-design: true
