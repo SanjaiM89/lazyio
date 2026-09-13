@@ -19,7 +19,7 @@ env:
 jobs:
   build-ios:
     name: Build iOS IPA
-    runs-on: macos-14  # Apple Silicon runner (M1)
+    runs-on: macos-14
     timeout-minutes: 30
 
     steps:
@@ -40,15 +40,9 @@ jobs:
         working-directory: ${{ env.PROJECT_PATH }}
         run: flutter pub get
 
-      - name: Build IPA
+      - name: Build IPA (unsigned)
         working-directory: ${{ env.PROJECT_PATH }}
-        run: |
-          flutter build ipa \
-            --release \
-            --export-options-plist=ios/ExportOptions.plist \
-            || flutter build ipa --release --no-codesign
-        env:
-          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: flutter build ipa --release --no-codesign
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
@@ -61,9 +55,16 @@ jobs:
         run: |
           echo "## iOS Build Complete" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-          echo "1. Download the IPA from the Artifacts section below" >> $GITHUB_STEP_SUMMARY
-          echo "2. Install via [AltStore](https://altstore.io/) or [Sideloadly](https://sideloadly.io/)" >> $GITHUB_STEP_SUMMARY
-          echo "3. Or upload to TestFlight for TestFlight distribution" >> $GITHUB_STEP_SUMMARY
+          echo "### How to install on iPad" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**For TestFlight:** Run the workflow with code signing secrets configured." >> $GITHUB_STEP_SUMMARY
+          echo "**Option A — AltStore (Free)**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download [AltServer](https://altstore.io/) on PC/Mac" >> $GITHUB_STEP_SUMMARY
+          echo "2. Install AltStore on iPad via USB" >> $GITHUB_STEP_SUMMARY
+          echo "3. Download the IPA from Artifacts below" >> $GITHUB_STEP_SUMMARY
+          echo "4. Open IPA in AltStore on iPad → installs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Option B — Sideloadly (Free)**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download [Sideloadly](https://sideloadly.io/) on PC" >> $GITHUB_STEP_SUMMARY
+          echo "2. Plug iPad via USB, drag IPA into Sideloadly" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> Install refreshes every 7 days with free Apple ID" >> $GITHUB_STEP_SUMMARY

@@ -28,10 +28,6 @@ class MusicProvider with ChangeNotifier {
       notifyListeners();
     });
 
-      _isPlaying = state.playing;
-      notifyListeners();
-    });
-
     _audioPlayer.currentIndexStream.listen((index) {
       if (index != null && _playlist.isNotEmpty && index < _playlist.length) {
         _currentIndex = index;
