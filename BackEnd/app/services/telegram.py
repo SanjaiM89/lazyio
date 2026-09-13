@@ -248,7 +248,8 @@ class TelegramClientWrapper:
         return await client.get_messages(self._entity, ids=message_id)
 
     async def stream_file(
-        self, message_id: int, offset: int = 0, limit: int = 0
+        self, message_id: int, offset: int = 0, limit: int = 0,
+        media=None, file_size: int = 0,
     ) -> AsyncGenerator[bytes, None]:
         MAX_RETRIES = 3
         RETRY_DELAY = 1.0
@@ -256,10 +257,14 @@ class TelegramClientWrapper:
 
         client = await self._ensure()
         self._require_user_session()
-        message = await client.get_messages(self._entity, ids=message_id)
-        if not message or not message.media:
-            raise FileNotFoundError(f"Telegram message {message_id} has no media")
-        file_size = message.file.size or 0
+
+        if not media:
+            message = await client.get_messages(self._entity, ids=message_id)
+            if not message or not message.media:
+                raise FileNotFoundError(f"Telegram message {message_id} has no media")
+            media = message.media
+            file_size = file_size or (message.file.size or 0)
+
         if limit <= 0:
             limit = max(file_size - offset, 0)
 
@@ -271,7 +276,7 @@ class TelegramClientWrapper:
             while retries < MAX_RETRIES:
                 try:
                     async for chunk in client.iter_download(
-                        message.media,
+                        media,
                         offset=current_offset,
                         limit=remaining,
                         chunk_size=CHUNK_SIZE,
@@ -307,14 +312,18 @@ class TelegramClientWrapper:
             message = await self.get_message(message_id)
         except TelegramBotLimitedError:
             raise
-        except Exception:
+        except Exception as e:
+            print(f"[TG] file_info failed for msg {message_id}: {e}")
             return None
         if not message or not message.media:
+            print(f"[TG] file_info: msg {message_id} has no media (message={bool(message)})")
             return None
         return {
             "file_name": message.file.name or f"telegram_{message_id}",
             "mime_type": message.file.mime_type or "application/octet-stream",
             "file_size": message.file.size or 0,
+            "media": message.media,
+            "file_id": getattr(message.file, "id", None),
         }
 
 

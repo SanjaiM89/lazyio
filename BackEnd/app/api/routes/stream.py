@@ -1,4 +1,3 @@
-import asyncio
 import re
 import time
 from fastapi import APIRouter, HTTPException, Request
@@ -10,8 +9,55 @@ from app.services.telegram import telegram_client
 router = APIRouter(prefix="/api/stream", tags=["stream"])
 
 CHUNK_SIZE = 256 * 1024
-STREAM_TIMEOUT = 30
-INACTIVITY_TIMEOUT = 10
+
+
+@router.get("/diagnose/{song_id}")
+async def diagnose_song(song_id: str):
+    """Check if a song's Telegram media is accessible."""
+    song = await get_song_raw_by_id(song_id)
+    if not song:
+        return {"status": "error", "detail": "Song not in DB"}
+
+    message_id = song.get("telegram_message_id")
+    if not message_id:
+        return {"status": "error", "detail": "No telegram_message_id"}
+
+    try:
+        info = await telegram_client.file_info(message_id)
+    except Exception as e:
+        return {"status": "error", "detail": f"file_info failed: {e}", "message_id": message_id}
+
+    if not info:
+        return {"status": "error", "detail": "file_info returned None", "message_id": message_id}
+
+    media = info.get("media")
+    file_size = info.get("file_size", 0)
+
+    # Try downloading first 1KB
+    ok = False
+    err = None
+    if media:
+        try:
+            client = await telegram_client._ensure()
+            count = 0
+            async for chunk in client.iter_download(media, limit=1024):
+                count += len(chunk)
+                if count >= 1024:
+                    break
+            ok = count > 0
+        except Exception as e:
+            err = str(e)
+
+    return {
+        "status": "ok" if ok else "error",
+        "message_id": message_id,
+        "file_name": info.get("file_name"),
+        "file_size": file_size,
+        "mime_type": info.get("mime_type"),
+        "error": err,
+        "title": song.get("title"),
+        "artist": song.get("artist"),
+    }
 
 
 @router.get("/{song_id}")
@@ -35,6 +81,7 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
                 print(f"[STREAM] S3 fallback failed: {e}")
         raise HTTPException(status_code=404, detail="Song has no Telegram media")
 
+    # Fetch file info + media handle in ONE call
     try:
         info = await telegram_client.file_info(message_id)
     except Exception as e:
@@ -42,11 +89,15 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
 
         if isinstance(e, TelegramBotLimitedError):
             raise HTTPException(status_code=503, detail=str(e))
-        raise
+        print(f"[STREAM] file_info error for {song_id} (msg={message_id}): {e}")
+        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
     if not info:
+        print(f"[STREAM] No media found for {song_id} (msg={message_id})")
         raise HTTPException(status_code=404, detail="Telegram media not found")
+
     file_size = info["file_size"]
     mime_type = info.get("mime_type") or "audio/mpeg"
+    media = info["media"]
 
     range_header = request.headers.get("range")
     start = 0
@@ -68,19 +119,16 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     length = end - start + 1
 
     async def gen():
-        last_chunk_time = time.monotonic()
         try:
             async for chunk in telegram_client.stream_file(
-                message_id, offset=start, limit=length
+                message_id, offset=start, limit=length,
+                media=media, file_size=file_size,
             ):
                 if await request.is_disconnected():
-                    print(f"[STREAM] Client disconnected for song {song_id}")
                     return
-                last_chunk_time = time.monotonic()
                 yield chunk
         except Exception as e:
-            elapsed = time.monotonic() - last_chunk_time
-            print(f"[STREAM] Error streaming {song_id} after {elapsed:.1f}s: {e}")
+            print(f"[STREAM] Error streaming {song_id} (msg={message_id}): {e}")
             return
 
     headers = {
