@@ -84,8 +84,11 @@ async def _enrich_from_store(info: dict) -> bool:
     return changed
 
 
-AUDIO_EXTS = (".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac")
-VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".avi", ".mov")
+AUDIO_EXTS = (".mp3", ".m4a", ".flac", ".wav", ".ogg", ".opus", ".aac",
+                ".wma", ".aiff", ".aif", ".m4b", ".amr", ".3gp", ".mpga")
+VIDEO_EXTS = (".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".flv",
+                ".wmv", ".ts", ".m2ts")
+AUDIO_MIMES = ("audio", "application/ogg", "application/x-flac")
 
 
 def _clean(value: str | None, fallback: str) -> str:
@@ -135,7 +138,7 @@ def extract_track_info(message) -> dict | None:
         file_name = file.name or f"telegram_{message.id}"
         lower = file_name.lower()
         mime_type = file.mime_type or ""
-        is_audio = lower.endswith(AUDIO_EXTS) or mime_type.startswith("audio")
+        is_audio = lower.endswith(AUDIO_EXTS) or mime_type.startswith(AUDIO_MIMES)
         is_video = lower.endswith(VIDEO_EXTS) or mime_type.startswith("video")
         if not (is_audio or is_video):
             return None
@@ -455,6 +458,70 @@ async def backfill_missing_artwork(limit: int = 100) -> dict:
             )
             updated += 1
     return {"updated": updated, "errors": errors, "scanned": len(results)}
+
+
+async def audit_channel(limit: int = 200, repair: bool = False) -> dict:
+    """Walk the newest `limit` channel messages and report index coverage.
+
+    For every file message: indexed / missing (valid track, not in DB) /
+    unsupported (extension+MIME outside the allowlist) / no-media.
+    With repair=True, missing ones are indexed on the spot.
+    """
+    await telegram_client.start()
+    checked = 0
+    indexed = 0
+    repaired = 0
+    missing = []
+    unsupported = []
+
+    async for message in telegram_client.iter_messages(limit=limit):
+        checked += 1
+        file = getattr(message, "file", None)
+        if file is None or not getattr(message, "media", None):
+            continue
+        info = extract_track_info(message)
+        if not info:
+            unsupported.append({
+                "message_id": message.id,
+                "file_name": file.name,
+                "mime_type": file.mime_type,
+            })
+            continue
+        existing = await get_song_by_telegram_id(message.id)
+        if existing:
+            indexed += 1
+            continue
+        missing.append({
+            "message_id": message.id,
+            "file_name": info.get("file_name"),
+            "title": info.get("title"),
+            "artist": info.get("artist"),
+        })
+        if repair:
+            try:
+                await _enrich_from_store(info)
+                await add_song(**info)
+                repaired += 1
+            except Exception as e:
+                print(f"[AUDIT] repair failed msg={message.id}: {e}")
+
+    if repaired:
+        await rebuild_albums()
+        try:
+            from app.api.routes.websocket import notify_update
+            await notify_update("library_updated")
+        except Exception:
+            pass
+
+    return {
+        "checked": checked,
+        "indexed": indexed,
+        "missing_count": len(missing),
+        "repaired": repaired,
+        "unsupported_count": len(unsupported),
+        "missing": missing[:100],
+        "unsupported": unsupported[:100],
+    }
 
 
 async def start_periodic_rescan(interval_seconds: int = 600):

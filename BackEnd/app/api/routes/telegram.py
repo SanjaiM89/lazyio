@@ -62,3 +62,15 @@ async def backfill_artwork(limit: int = 100):
     except Exception:
         pass
     return {"status": "success", **result}
+
+
+@router.get("/audit")
+async def audit_coverage(limit: int = 200, repair: bool = False):
+    """Show which channel files are indexed, missing, or unsupported.
+
+    repair=true indexes the missing ones on the spot.
+    """
+    from app.services.channel_indexer import audit_channel
+
+    limit = max(1, min(limit, 500))
+    return await audit_channel(limit=limit, repair=repair)
