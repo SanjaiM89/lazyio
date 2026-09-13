@@ -95,7 +95,7 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     file_size = info["file_size"]
     mime_type = info.get("mime_type") or "audio/mpeg"
     media = info["media"]
-    media_type = type(media).__name__ if media is not None else "None"
+    media_type = media.__class__.__name__ if media is not None else "None"
 
     print(f"[STREAM] {song_id} msg={message_id} size={file_size} mime={mime_type} media={media_type} range={range_header!r}")
 
