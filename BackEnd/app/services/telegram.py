@@ -11,7 +11,9 @@ Two modes:
 Uses API_ID / API_HASH + SOURCE_CHANNEL from .env / config.env.
 """
 
+import asyncio
 import os
+import time
 from typing import AsyncGenerator, Optional
 
 from app.core.config import settings
@@ -166,7 +168,16 @@ class TelegramClientWrapper:
             self.is_bot = False
 
     async def _ensure(self):
-        if self._client is None:
+        if self._client is not None:
+            try:
+                if not self._client.is_connected():
+                    print("[TG] Connection lost, reconnecting...")
+                    self._client = None
+                    await self.start()
+            except Exception:
+                self._client = None
+                await self.start()
+        else:
             await self.start()
         return self._client
 
@@ -239,6 +250,10 @@ class TelegramClientWrapper:
     async def stream_file(
         self, message_id: int, offset: int = 0, limit: int = 0
     ) -> AsyncGenerator[bytes, None]:
+        MAX_RETRIES = 3
+        RETRY_DELAY = 1.0
+        CHUNK_SIZE = 256 * 1024
+
         client = await self._ensure()
         self._require_user_session()
         message = await client.get_messages(self._entity, ids=message_id)
@@ -247,19 +262,44 @@ class TelegramClientWrapper:
         file_size = message.file.size or 0
         if limit <= 0:
             limit = max(file_size - offset, 0)
+
+        current_offset = offset
         remaining = limit
-        async for chunk in client.iter_download(
-            message.media,
-            offset=offset,
-            limit=remaining,
-            chunk_size=1024 * 256,
-            request_size=1024 * 256,
-        ):
-            if not chunk:
-                break
-            yield chunk
-            remaining -= len(chunk)
-            if remaining <= 0:
+
+        while remaining > 0:
+            retries = 0
+            while retries < MAX_RETRIES:
+                try:
+                    async for chunk in client.iter_download(
+                        message.media,
+                        offset=current_offset,
+                        limit=remaining,
+                        chunk_size=CHUNK_SIZE,
+                        request_size=CHUNK_SIZE,
+                    ):
+                        if not chunk:
+                            break
+                        yield chunk
+                        current_offset += len(chunk)
+                        remaining -= len(chunk)
+                        retries = 0
+                        if remaining <= 0:
+                            return
+                    break
+                except Exception as e:
+                    retries += 1
+                    if retries >= MAX_RETRIES:
+                        print(f"[TG] stream_file failed after {MAX_RETRIES} retries for msg {message_id}: {e}")
+                        raise
+                    wait = RETRY_DELAY * retries
+                    print(f"[TG] stream_file retry {retries}/{MAX_RETRIES} for msg {message_id} at offset {current_offset}: {e}")
+                    await asyncio.sleep(wait)
+                    try:
+                        client = await self._ensure()
+                    except Exception:
+                        if retries >= MAX_RETRIES:
+                            raise
+            else:
                 break
 
     async def file_info(self, message_id: int) -> Optional[dict]:

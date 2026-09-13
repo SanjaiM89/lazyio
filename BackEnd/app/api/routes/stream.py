@@ -1,4 +1,6 @@
+import asyncio
 import re
+import time
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
@@ -8,6 +10,8 @@ from app.services.telegram import telegram_client
 router = APIRouter(prefix="/api/stream", tags=["stream"])
 
 CHUNK_SIZE = 256 * 1024
+STREAM_TIMEOUT = 30
+INACTIVITY_TIMEOUT = 10
 
 
 @router.get("/{song_id}")
@@ -18,7 +22,6 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
 
     message_id = song.get("telegram_message_id")
     if not message_id:
-        # Legacy S3 fallback
         s3_key = song.get("s3_audio_key") or song.get("s3_video_key")
         if s3_key:
             try:
@@ -65,8 +68,20 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     length = end - start + 1
 
     async def gen():
-        async for chunk in telegram_client.stream_file(message_id, offset=start, limit=length):
-            yield chunk
+        last_chunk_time = time.monotonic()
+        try:
+            async for chunk in telegram_client.stream_file(
+                message_id, offset=start, limit=length
+            ):
+                if await request.is_disconnected():
+                    print(f"[STREAM] Client disconnected for song {song_id}")
+                    return
+                last_chunk_time = time.monotonic()
+                yield chunk
+        except Exception as e:
+            elapsed = time.monotonic() - last_chunk_time
+            print(f"[STREAM] Error streaming {song_id} after {elapsed:.1f}s: {e}")
+            return
 
     headers = {
         "Accept-Ranges": "bytes",
