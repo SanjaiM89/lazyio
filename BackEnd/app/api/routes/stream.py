@@ -130,9 +130,16 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
         yielded = 0
         chunks = 0
         try:
-            async for chunk in telegram_client.stream_file(
-                message_id, offset=start, limit=length,
-                media=media, file_size=file_size,
+            async def fetch(fetch_offset: int, fetch_length: int):
+                async for chunk in telegram_client.stream_file(
+                    message_id, offset=fetch_offset, limit=fetch_length,
+                    media=media, file_size=file_size,
+                ):
+                    yield chunk
+
+            from app.services.audio_cache import stream_with_cache
+            async for chunk in stream_with_cache(
+                message_id, start, length, file_size, fetch
             ):
                 if await request.is_disconnected():
                     print(f"[STREAM] {song_id}: client disconnected after {yielded} bytes")

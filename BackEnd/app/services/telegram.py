@@ -322,7 +322,7 @@ class TelegramClientWrapper:
     ) -> AsyncGenerator[bytes, None]:
         MAX_RETRIES = 3
         RETRY_DELAY = 1.0
-        CHUNK_SIZE = 256 * 1024
+        CHUNK_SIZE = 1024 * 1024
 
         client = await self._ensure()
         self._require_user_session()
