@@ -20,7 +20,7 @@ const Artists = ({ onPlaySong, onSelectAlbum, focusArtistName, onClearFocus }) =
     pagesRef.current = pages;
     busyRef.current = loading || loadingMore;
 
-    // Infinite scroll: auto-load the next page as the sentinel scrolls in.
+    // Infinite scroll: auto-load the next page as the sentinel scrolls in or on scroll.
     const observerRef = useRef(null);
     const setSentinel = useCallback((el) => {
         if (observerRef.current) {
@@ -28,6 +28,7 @@ const Artists = ({ onPlaySong, onSelectAlbum, focusArtistName, onClearFocus }) =
             observerRef.current = null;
         }
         if (!el) return;
+        const rootEl = el.closest('.overflow-y-auto');
         observerRef.current = new IntersectionObserver(
             ([entry]) => {
                 if (
@@ -38,10 +39,21 @@ const Artists = ({ onPlaySong, onSelectAlbum, focusArtistName, onClearFocus }) =
                     loadArtists(pageRef.current + 1, true);
                 }
             },
-            { rootMargin: '800px' }
+            { root: rootEl, rootMargin: '600px' }
         );
         observerRef.current.observe(el);
     }, []);
+
+    const handleScroll = (e) => {
+        const { scrollTop, clientHeight, scrollHeight } = e.target;
+        if (
+            scrollHeight - (scrollTop + clientHeight) < 600 &&
+            pageRef.current < pagesRef.current &&
+            !busyRef.current
+        ) {
+            loadArtists(pageRef.current + 1, true);
+        }
+    };
 
     useEffect(() => () => observerRef.current?.disconnect(), []);
 
@@ -172,7 +184,7 @@ const Artists = ({ onPlaySong, onSelectAlbum, focusArtistName, onClearFocus }) =
     }
 
     return (
-        <div className="h-full flex flex-col p-8 overflow-y-auto">
+        <div className="h-full flex flex-col p-8 overflow-y-auto" onScroll={handleScroll}>
             <div className="max-w-6xl mx-auto w-full">
                 <div className="flex items-center justify-between mb-8">
                     <div>

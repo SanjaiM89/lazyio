@@ -10,6 +10,7 @@ import AddToPlaylistModal from './AddToPlaylistModal';
 import SongMenu from './SongMenu';
 import SettingsModal from './SettingsModal';
 import SmartSearch from './SmartSearch';
+import SearchResults from './SearchResults';
 
 function App() {
   const [currentSong, setCurrentSong] = useState(null);
@@ -23,6 +24,9 @@ function App() {
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [hasMoreSongs, setHasMoreSongs] = useState(true);
   const libraryRef = useRef(null);
+
+  // Search Results Page State
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Playlist Modal State
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
@@ -41,6 +45,11 @@ function App() {
   const handleSelectArtist = (artist) => {
     setFocusArtistName(artist.name);
     setView('artists');
+  };
+
+  const handleSearchSubmit = (query) => {
+    setSearchQuery(query);
+    setView('search');
   };
 
   useEffect(() => {
@@ -232,6 +241,7 @@ function App() {
             onSelectSong={handlePlaySong}
             onSelectAlbum={handleSelectAlbum}
             onSelectArtist={handleSelectArtist}
+            onSearchSubmit={handleSearchSubmit}
           />
 
           <div
@@ -253,6 +263,16 @@ function App() {
             onNavigate={handleNavigate}
             onRefresh={loadHomepageData}
             onOpenPlaylistModal={handleAddToPlaylist}
+          />
+        )}
+        {view === 'search' && (
+          <SearchResults
+            query={searchQuery}
+            onPlaySong={handlePlaySong}
+            onSelectAlbum={handleSelectAlbum}
+            onSelectArtist={handleSelectArtist}
+            onOpenPlaylistModal={handleAddToPlaylist}
+            onAddAlbumToPlaylist={handleAddAlbumToPlaylist}
           />
         )}
         {view === 'albums' && (

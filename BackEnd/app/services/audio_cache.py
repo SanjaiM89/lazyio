@@ -148,20 +148,40 @@ async def stream_with_cache(message_id: int, offset: int, length: int,
 
     if not we_write:
         # Pure passthrough: slow path, but never blocks on the writer.
+        sent = 0
         async for chunk in fetch(offset, length):
+            remaining = length - sent
+            if len(chunk) > remaining:
+                chunk = chunk[:remaining]
+            if not chunk:
+                break
             yield chunk
+            sent += len(chunk)
+            if sent >= length:
+                break
         return
 
     # Stream-through: forward to client while appending to the part file.
     part = _part(message_id)
     try:
+        sent = 0
         with open(part, "ab") as f:
             async for chunk in fetch(offset, length):
-                yield chunk
+                remaining_bytes = length - sent
+                if len(chunk) > remaining_bytes:
+                    write_chunk = chunk[:remaining_bytes]
+                else:
+                    write_chunk = chunk
+                if not write_chunk:
+                    break
+                yield write_chunk
+                sent += len(write_chunk)
                 try:
-                    f.write(chunk)
+                    f.write(chunk)  # write full chunk to cache
                 except OSError as e:
                     print(f"[CACHE] write failed for msg {message_id}: {e}")
+                    break
+                if sent >= length:
                     break
         try:
             if part.stat().st_size >= file_size:

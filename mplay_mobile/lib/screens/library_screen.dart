@@ -11,6 +11,7 @@ import '../providers/video_provider.dart';
 import 'playlist_detail_screen.dart';
 import 'album_detail_screen.dart';
 import 'artist_detail_screen.dart';
+import 'search_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -185,6 +186,14 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             child: TextField(
               controller: _searchController,
               onChanged: _onSearchChanged,
+              onSubmitted: (query) {
+                if (query.trim().isNotEmpty) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: query.trim())),
+                  );
+                }
+              },
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
                 hintText: "Search songs, albums, artists...",

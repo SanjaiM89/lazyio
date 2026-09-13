@@ -22,7 +22,7 @@ const Albums = ({ onPlaySong, onAddAlbumToPlaylist, focusAlbumId, onClearFocus }
     pagesRef.current = pages;
     busyRef.current = loading || loadingMore;
 
-    // Infinite scroll: auto-load the next page as the sentinel scrolls in.
+    // Infinite scroll: auto-load the next page as the sentinel scrolls in or on scroll.
     const observerRef = useRef(null);
     const setSentinel = useCallback((el) => {
         if (observerRef.current) {
@@ -30,6 +30,7 @@ const Albums = ({ onPlaySong, onAddAlbumToPlaylist, focusAlbumId, onClearFocus }
             observerRef.current = null;
         }
         if (!el) return;
+        const rootEl = el.closest('.overflow-y-auto');
         observerRef.current = new IntersectionObserver(
             ([entry]) => {
                 if (
@@ -40,10 +41,21 @@ const Albums = ({ onPlaySong, onAddAlbumToPlaylist, focusAlbumId, onClearFocus }
                     loadAlbums(pageRef.current + 1, true);
                 }
             },
-            { rootMargin: '800px' }
+            { root: rootEl, rootMargin: '600px' }
         );
         observerRef.current.observe(el);
     }, []);
+
+    const handleScroll = (e) => {
+        const { scrollTop, clientHeight, scrollHeight } = e.target;
+        if (
+            scrollHeight - (scrollTop + clientHeight) < 600 &&
+            pageRef.current < pagesRef.current &&
+            !busyRef.current
+        ) {
+            loadAlbums(pageRef.current + 1, true);
+        }
+    };
 
     useEffect(() => () => observerRef.current?.disconnect(), []);
 
@@ -154,7 +166,7 @@ const Albums = ({ onPlaySong, onAddAlbumToPlaylist, focusAlbumId, onClearFocus }
     }
 
     return (
-        <div className="h-full flex flex-col p-8 overflow-y-auto">
+        <div className="h-full flex flex-col p-8 overflow-y-auto" onScroll={handleScroll}>
             <div className="max-w-6xl mx-auto w-full">
                 <div className="flex items-center justify-between mb-8">
                     <div>
@@ -207,9 +219,7 @@ const Albums = ({ onPlaySong, onAddAlbumToPlaylist, focusAlbumId, onClearFocus }
                     {/* Infinite-scroll sentinel: loads the next page automatically */}
                     {page < pages && (
                         <div ref={setSentinel} className="flex justify-center py-8">
-                            {loadingMore && (
-                                <div className="w-8 h-8 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
-                            )}
+                            <div className="w-8 h-8 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
                         </div>
                     )}
                     </>

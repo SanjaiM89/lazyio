@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Fuse from 'fuse.js';
 import { searchLibrary } from './api';
 
-const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => {
+const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist, onSearchSubmit }) => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
     const [albums, setAlbums] = useState([]);
@@ -81,6 +81,21 @@ const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => 
         setQuery('');
     };
 
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && query.trim()) {
+            e.preventDefault();
+            onSearchSubmit?.(query.trim());
+            setIsOpen(false);
+        }
+    };
+
+    const triggerFullSearch = () => {
+        if (query.trim()) {
+            onSearchSubmit?.(query.trim());
+            setIsOpen(false);
+        }
+    };
+
     const hasAny = results.length > 0 || albums.length > 0 || artists.length > 0;
 
     return (
@@ -97,7 +112,8 @@ const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => 
                         setIsOpen(true);
                     }}
                     onFocus={() => setIsOpen(true)}
-                    placeholder="Search music..."
+                    onKeyDown={handleKeyDown}
+                    placeholder="Search music (Press Enter)..."
                     className="bg-transparent border-none focus:outline-none text-sm text-white placeholder-white/50 w-full"
                 />
             </div>
@@ -106,6 +122,17 @@ const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => 
             {isOpen && query && hasAny && (
                 <div className="absolute top-full mt-2 w-80 right-0 bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100] animate-scale-in origin-top-right max-h-[70vh] overflow-y-auto">
                     <div className="p-2">
+                        {/* Quick View All Banner */}
+                        <div
+                            onClick={triggerFullSearch}
+                            className="p-2.5 bg-gradient-to-r from-pink-500/20 to-purple-500/20 hover:from-pink-500/30 hover:to-purple-500/30 text-white font-medium text-xs rounded-lg text-center cursor-pointer transition border border-pink-500/30 mb-2 flex items-center justify-between"
+                        >
+                            <span className="truncate">See all results for "{query.trim()}"</span>
+                            <svg className="w-4 h-4 text-pink-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </div>
+
                         {artists.length > 0 && (
                             <>
                                 <p className="text-[11px] font-bold text-white/40 uppercase tracking-wider px-2 pt-1 pb-1">Artists</p>
@@ -183,7 +210,13 @@ const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => 
             {/* No Results */}
             {isOpen && query && !hasAny && (
                 <div className="absolute top-full mt-2 w-64 right-0 bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-4 text-center z-[100]">
-                    <p className="text-sm text-white/50">No results found</p>
+                    <p className="text-sm text-white/50 mb-2">No quick results found</p>
+                    <button
+                        onClick={triggerFullSearch}
+                        className="px-3 py-1.5 bg-pink-500/20 text-pink-300 rounded-lg text-xs font-medium hover:bg-pink-500/30 transition"
+                    >
+                        Search library for "{query}"
+                    </button>
                 </div>
             )}
         </div>

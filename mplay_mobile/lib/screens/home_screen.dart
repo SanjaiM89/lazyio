@@ -23,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<Playlist> _appPlaylists = [];
   List<Album> _albums = [];
   bool _loading = true;
+  bool _scanningTelegram = false;
 
   @override
   void initState() {
@@ -49,6 +50,23 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       print("Error loading home data: $e");
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _handleTelegramScan() async {
+    setState(() => _scanningTelegram = true);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Scanning Telegram channel for new songs...')),
+      );
+    }
+    try {
+      await ApiService.scanTelegramChannel(force: true);
+      await _loadData();
+    } catch (e) {
+      print("Telegram scan error: $e");
+    } finally {
+      if (mounted) setState(() => _scanningTelegram = false);
     }
   }
 
@@ -97,18 +115,40 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                GestureDetector(
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                  ),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: kSurfaceColor,
-                      borderRadius: BorderRadius.circular(20),
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: _scanningTelegram ? null : _handleTelegramScan,
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: kSurfaceColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: _scanningTelegram
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryColor),
+                              )
+                            : const Icon(Icons.refresh_rounded, color: Colors.white54, size: 20),
+                      ),
                     ),
-                    child: const Icon(Icons.settings_rounded, color: Colors.white54, size: 20),
-                  ),
+                    const SizedBox(width: 10),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: kSurfaceColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(Icons.settings_rounded, color: Colors.white54, size: 20),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

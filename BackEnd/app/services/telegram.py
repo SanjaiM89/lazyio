@@ -389,6 +389,11 @@ class TelegramClientWrapper:
                     ):
                         if not chunk:
                             break
+                        # Truncate the last chunk so we never exceed the
+                        # requested byte range (Telethon returns fixed-size
+                        # chunks that can overshoot).
+                        if len(chunk) > remaining:
+                            chunk = chunk[:remaining]
                         yield chunk
                         current_offset += len(chunk)
                         remaining -= len(chunk)

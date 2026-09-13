@@ -93,7 +93,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   Future<void> _rescan() async {
     setState(() => _scanning = true);
     try {
-      await ApiService.scanTelegramChannel();
+      await ApiService.scanTelegramChannel(force: true);
       await _loadAlbums(page: 1);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

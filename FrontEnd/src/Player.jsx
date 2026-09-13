@@ -176,18 +176,19 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         // bytes), 2 = NETWORK (connection died mid-stream).
         const err = audio.error;
         if (err && (err.code === 4 || err.code === 2)) {
-            // Retry the SAME song once: the backend reconnects its Telegram
-            // socket on transport errors, so the second attempt often works.
-            if (retryCountRef.current < 1) {
+            // Retry up to 3 times: the backend may be transcoding ALAC->AAC
+            // (takes a few seconds) or reconnecting its Telegram socket.
+            if (retryCountRef.current < 3) {
                 retryCountRef.current += 1;
-                console.warn(`Retrying "${currentSong.title}" (attempt 2)...`);
-                setPlayError(`Retrying "${currentSong.title}"...`);
+                const attempt = retryCountRef.current + 1;
+                console.warn(`Retrying "${currentSong.title}" (attempt ${attempt})...`);
+                setPlayError(`Loading "${currentSong.title}"...`);
                 skipTimerRef.current = setTimeout(() => {
                     if (audioRef.current) {
                         audioRef.current.load();
                         audioRef.current.play().catch(() => {});
                     }
-                }, 1500);
+                }, 3000);
                 return;
             }
             console.error(`Audio error for "${currentSong.title}" (code ${err.code}) — skipping`);
@@ -215,6 +216,8 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         setVideoError(null);
         setPlayError(null);
         setIsPlaying(true);
+        setProgress(0);
+        setDuration(currentSong.duration || 0);
         retryCountRef.current = 0;
         if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
 
@@ -281,7 +284,12 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         const media = mode === 'video' ? videoRef.current : audioRef.current;
         if (media) {
             setProgress(media.currentTime);
-            setDuration(media.duration || 0);
+            const d = media.duration;
+            if (d && isFinite(d) && d > 0) {
+                setDuration(d);
+            } else if (currentSong?.duration) {
+                setDuration(currentSong.duration);
+            }
         }
     };
 
@@ -339,7 +347,8 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         return `${m}:${s < 10 ? '0' : ''}${s}`;
     };
 
-    const progressPercent = duration > 0 ? (progress / duration) * 100 : 0;
+    const songDuration = (duration && isFinite(duration) && duration > 0) ? duration : (currentSong?.duration || 0);
+    const progressPercent = songDuration > 0 ? (progress / songDuration) * 100 : 0;
 
     // Video Player Component and ModeToggle moved to TOP of file
     // (See lines below imports)
@@ -370,7 +379,7 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                             currentSong={currentSong}
                             isPlaying={isPlaying}
                             progress={progress}
-                            duration={duration}
+                            duration={songDuration}
                             formatTime={formatTime}
                             togglePlay={togglePlay}
                             toggleFullscreen={toggleFullscreen}
@@ -427,9 +436,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                                 <div className="flex-1 h-1.5 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2.5 transition-all duration-300">
                                     <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-600 rounded-full shadow-[0_0_15px_rgba(236,72,153,0.5)]" style={{ width: `${progressPercent}%` }} />
                                     <div className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-[0_0_10px_rgba(255,255,255,0.8)]" style={{ left: `${progressPercent}%`, marginLeft: '-8px' }} />
-                                    <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                                    <input type="range" min="0" max={songDuration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
                                 </div>
-                                <span className="text-xs text-white/60 w-10 font-mono">{formatTime(duration)}</span>
+                                <span className="text-xs text-white/60 w-10 font-mono">{formatTime(songDuration)}</span>
                             </div>
 
                             {/* Main Controls */}
@@ -519,9 +528,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                     <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group/prog hover:h-2 transition-all duration-300">
                         <div className="absolute left-0 top-0 h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full" style={{ width: `${progressPercent}%` }} />
                         <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover/prog:opacity-100 transition shadow-md" style={{ left: `${progressPercent}%`, marginLeft: '-6px' }} />
-                        <input type="range" min="0" max={duration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                        <input type="range" min="0" max={songDuration || 100} value={progress} onChange={handleSeek} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
                     </div>
-                    <span className="text-xs text-white/40 w-8 font-mono">{formatTime(duration)}</span>
+                    <span className="text-xs text-white/40 w-8 font-mono">{formatTime(songDuration)}</span>
                 </div>
             </div>
 
@@ -558,7 +567,12 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                 onError={handleAudioError}
                 onPlaying={() => { if (currentSong) prefetchNext(currentSong); }}
                 onLoadedMetadata={() => {
-                    setDuration(audioRef.current?.duration || 0);
+                    const d = audioRef.current?.duration;
+                    if (d && isFinite(d) && d > 0) {
+                        setDuration(d);
+                    } else if (currentSong?.duration) {
+                        setDuration(currentSong.duration);
+                    }
                     setPlayError(null);
                 }}
                 style={{ display: 'none' }}

@@ -316,21 +316,57 @@ async def upsert_album_for_song(song: dict):
 
 
 async def rebuild_albums():
-    """Regroup all songs into albums. Used after channel scans."""
+    """Regroup all songs into albums efficiently in-memory and bulk upsert."""
     await albums_collection.delete_many({})
-    count = 0
+
+    albums_map = {}
+    songs_to_update = []
+
     async for song in songs_collection.find({}):
-        album_key = song.get("album_key") or album_key_for(
-            song.get("title"), song.get("artist"), song.get("album")
-        )
+        title = song.get("title")
+        artist = song.get("artist")
+        album = song.get("album")
+        raw_key = song.get("album_key") or album_key_for(title, artist, album)
+        album_key = raw_key.casefold() if raw_key else "untitled"
+
         if song.get("album_key") != album_key:
-            await songs_collection.update_one(
-                {"_id": song["_id"]}, {"$set": {"album_key": album_key}}
-            )
-            song["album_key"] = album_key
-        await upsert_album_for_song(song)
-        count += 1
-    return count
+            songs_to_update.append((song["_id"], album_key))
+
+        album_name = album
+        if not album_name or album_name in GENERIC_ALBUMS:
+            album_name = title or "Untitled"
+        cover = song.get("cover_art") or song.get("thumbnail")
+        song_id = str(song["_id"])
+
+        if album_key in albums_map:
+            entry = albums_map[album_key]
+            if song_id not in entry["song_ids"]:
+                entry["song_ids"].append(song_id)
+            if album_name and not entry.get("name"):
+                entry["name"] = album_name
+            if cover and not entry.get("cover_art"):
+                entry["cover_art"] = cover
+        else:
+            albums_map[album_key] = {
+                "album_key": album_key,
+                "name": album_name,
+                "artist": artist,
+                "cover_art": cover,
+                "song_ids": [song_id],
+            }
+
+    if songs_to_update:
+        from pymongo import UpdateOne
+        ops = [UpdateOne({"_id": sid}, {"$set": {"album_key": ak}}) for sid, ak in songs_to_update]
+        for i in range(0, len(ops), 1000):
+            await songs_collection.bulk_write(ops[i:i+1000])
+
+    if albums_map:
+        docs = list(albums_map.values())
+        for i in range(0, len(docs), 1000):
+            await albums_collection.insert_many(docs[i:i+1000])
+
+    return len(albums_map)
 
 
 async def get_all_songs():
