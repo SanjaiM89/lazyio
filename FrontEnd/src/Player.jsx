@@ -150,8 +150,24 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const [playError, setPlayError] = useState(null);
     const skipTimerRef = useRef(null);
     const retryCountRef = useRef(0);
+    const prefetchedRef = useRef(null);
 
     const isBenignAbort = (e) => e && e.name === 'AbortError';
+
+    // Warm the backend cache for the NEXT song while this one plays, so
+    // pressing next starts instantly instead of paying Telegram cold-start.
+    const prefetchNext = (song) => {
+        try {
+            const list = playlist || [];
+            const i = list.findIndex(s => s.id === song.id);
+            const nxt = i >= 0 ? list[i + 1] : null;
+            if (!nxt || prefetchedRef.current === nxt.id) return;
+            prefetchedRef.current = nxt.id;
+            fetch(getStreamUrl(nxt.id), { headers: { Range: 'bytes=0-524287' } })
+                .then(r => { try { r.arrayBuffer(); } catch { /* ignore */ } })
+                .catch(() => {});
+        } catch { /* prefetch is best-effort */ }
+    };
 
     const handleAudioError = () => {
         const audio = audioRef.current;
@@ -540,6 +556,7 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                 onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
                 onEnded={onNext}
                 onError={handleAudioError}
+                onPlaying={() => { if (currentSong) prefetchNext(currentSong); }}
                 onLoadedMetadata={() => {
                     setDuration(audioRef.current?.duration || 0);
                     setPlayError(null);

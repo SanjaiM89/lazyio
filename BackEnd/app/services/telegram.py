@@ -113,6 +113,12 @@ class TelegramClientWrapper:
         mode = "BOT (upload-only)" if self.is_bot else "USER (full access)"
         print(f"[TG] Connected as {getattr(me, 'first_name', '?')} [{mode}]")
 
+        if self._entity is not None:
+            # Reconnect path: entity survives across sessions, skip the
+            # multi-second get_dialogs + resolution walk.
+            print("[TG] Reusing cached channel entity (fast reconnect)")
+            return self._client
+
         if not self.is_bot:
             # Populate the entity cache: numeric channel IDs need access hashes.
             try:
@@ -179,6 +185,28 @@ class TelegramClientWrapper:
             self._entity = None
             self.is_bot = False
 
+    async def start_keepalive(self, interval_seconds: int = 240):
+        """Ping the session periodically so dead sockets are found and
+        rebuilt HERE, not inside a user's stream request (where the
+        handshake delay is felt as 'song takes forever to start')."""
+        while True:
+            await asyncio.sleep(interval_seconds)
+            try:
+                if self._client is None:
+                    continue
+                await self._client.get_me()
+            except Exception as e:
+                if self._is_transport_error(e):
+                    print(f"[TG] keepalive: dead socket detected, rebuilding now: {e}")
+                    self._force_reconnect = True
+                    try:
+                        await self._reconnect()
+                        print("[TG] keepalive: session rebuilt, next stream starts warm")
+                    except Exception as e2:
+                        print(f"[TG] keepalive: rebuild failed, will retry: {e2}")
+                else:
+                    print(f"[TG] keepalive warning: {e}")
+
     async def _reconnect(self):
         """Drop the (possibly half-dead) session and build a fresh one.
 
@@ -201,7 +229,9 @@ class TelegramClientWrapper:
                         pass
             finally:
                 self._client = None
-                self._entity = None
+                # NOTE: self._entity is deliberately preserved — a channel
+                # entity (id + access hash) stays valid across sessions, so
+                # reconnects skip the slow get_dialogs + re-resolution.
                 self._force_reconnect = False
             await self.start()
             return self._client

@@ -98,6 +98,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[STARTUP] Periodic rescan not started: {e}")
 
+        try:
+            from app.services.telegram import telegram_client as _tg
+
+            asyncio.create_task(_tg.start_keepalive(interval_seconds=240))
+            print("[STARTUP] Telegram keepalive started (240s)")
+        except Exception as e:
+            print(f"[STARTUP] Keepalive not started: {e}")
+
     asyncio.create_task(delayed_init())
 
     yield
