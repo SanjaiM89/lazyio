@@ -53,7 +53,10 @@ async def lifespan(app: FastAPI):
     # Connect DB implicitly done by Database.connect() on import
     Database.connect()
 
-    await init_default_playlists()
+    try:
+        await init_default_playlists()
+    except Exception as e:
+        print(f"[STARTUP] Playlists init skipped (DB unreachable, will retry per-request): {e}")
     print("[STARTUP] Fast init complete - server ready to accept connections")
 
     async def delayed_init():
