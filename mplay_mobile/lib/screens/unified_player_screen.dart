@@ -1089,9 +1089,6 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
                 ],
               ),
             ),
-                ],
-              ),
-            ),
             const Divider(color: Colors.white10),
             ListTile(
               leading: const Icon(Icons.auto_awesome, color: Colors.purpleAccent),
