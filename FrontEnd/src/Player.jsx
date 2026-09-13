@@ -149,17 +149,34 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const [isBuffering, setIsBuffering] = useState(false);
     const [playError, setPlayError] = useState(null);
     const skipTimerRef = useRef(null);
+    const retryCountRef = useRef(0);
+
+    const isBenignAbort = (e) => e && e.name === 'AbortError';
 
     const handleAudioError = () => {
         const audio = audioRef.current;
         if (!audio || !currentSong) return;
-        // MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED = 4
-        // This means the server returned non-audio content (like a JSON error)
+        // MediaError 4 = SRC_NOT_SUPPORTED (server sent non-audio/truncated
+        // bytes), 2 = NETWORK (connection died mid-stream).
         const err = audio.error;
         if (err && (err.code === 4 || err.code === 2)) {
-            console.error(`Audio error for "${currentSong.title}": ${err.message} (code ${err.code})`);
-            setPlayError(`Cannot play "${currentSong.title}" — server may be unreachable`);
-            // Auto-skip after 2s
+            // Retry the SAME song once: the backend reconnects its Telegram
+            // socket on transport errors, so the second attempt often works.
+            if (retryCountRef.current < 1) {
+                retryCountRef.current += 1;
+                console.warn(`Retrying "${currentSong.title}" (attempt 2)...`);
+                setPlayError(`Retrying "${currentSong.title}"...`);
+                skipTimerRef.current = setTimeout(() => {
+                    if (audioRef.current) {
+                        audioRef.current.load();
+                        audioRef.current.play().catch(() => {});
+                    }
+                }, 1500);
+                return;
+            }
+            console.error(`Audio error for "${currentSong.title}" (code ${err.code}) — skipping`);
+            setPlayError(`Cannot play "${currentSong.title}" — skipping...`);
+            // Give up on this song, move on after 2s
             skipTimerRef.current = setTimeout(() => {
                 setPlayError(null);
                 onNext?.();
@@ -182,6 +199,8 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         setVideoError(null);
         setPlayError(null);
         setIsPlaying(true);
+        retryCountRef.current = 0;
+        if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
 
         if (preferredMode === 'video' && hasVideo) {
             setMode('video');
@@ -190,6 +209,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
             setTimeout(() => {
                 if (audioRef.current) {
                     audioRef.current.play().catch(e => {
+                        // AbortError = a newer load/pause superseded this
+                        // play() call — benign, not a real failure.
+                        if (isBenignAbort(e)) return;
                         console.error("Play error:", e);
                         setPlayError(`Cannot play "${currentSong.title}"`);
                     });

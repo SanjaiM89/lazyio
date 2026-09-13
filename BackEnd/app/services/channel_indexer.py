@@ -455,6 +455,9 @@ async def backfill_missing_artwork(limit: int = 100) -> dict:
             )
             updated += 1
     return {"updated": updated, "errors": errors, "scanned": len(results)}
+
+
+async def start_periodic_rescan(interval_seconds: int = 600):
     while True:
         await asyncio.sleep(interval_seconds)
         try:

@@ -35,6 +35,16 @@ class TelegramBotLimitedError(Exception):
 
 
 class TelegramClientWrapper:
+    # Transport-level failures: socket closed by server/NAT, half-dead
+    # connection, read timeouts. These need a FULL reconnect (a new TCP
+    # session) — reusing the client just replays the failure.
+    _TRANSPORT_ERRORS = (
+        ConnectionError,
+        OSError,
+        asyncio.IncompleteReadError,
+        TimeoutError,
+    )
+
     def __init__(self):
         self.api_id = settings.TELEGRAM_API_ID
         self.api_hash = settings.TELEGRAM_API_HASH
@@ -45,6 +55,8 @@ class TelegramClientWrapper:
         self._client = None
         self._entity = None
         self.is_bot = False
+        self._lock = asyncio.Lock()
+        self._force_reconnect = False
 
     @property
     def use_user_session(self) -> bool:
@@ -167,18 +179,63 @@ class TelegramClientWrapper:
             self._entity = None
             self.is_bot = False
 
-    async def _ensure(self):
-        if self._client is not None:
+    async def _reconnect(self):
+        """Drop the (possibly half-dead) session and build a fresh one.
+
+        Serialized with a lock so 10 concurrent stream requests hitting a
+        dead socket trigger ONE reconnect, not ten.
+        """
+        async with self._lock:
+            if not self._force_reconnect and self._client is not None:
+                try:
+                    if self._client.is_connected():
+                        return self._client
+                except Exception:
+                    pass
+            print("[TG] Reconnecting (fresh session)...")
             try:
-                if not self._client.is_connected():
-                    print("[TG] Connection lost, reconnecting...")
-                    self._client = None
-                    await self.start()
-            except Exception:
+                if self._client is not None:
+                    try:
+                        await self._client.disconnect()
+                    except Exception:
+                        pass
+            finally:
                 self._client = None
-                await self.start()
-        else:
+                self._entity = None
+                self._force_reconnect = False
             await self.start()
+            return self._client
+
+    def _is_transport_error(self, e: Exception) -> bool:
+        if isinstance(e, self._TRANSPORT_ERRORS):
+            return True
+        # Telethon wraps socket failures in plain ConnectionError with
+        # messages like "Server closed the connection: 0 bytes read...".
+        msg = str(e).lower()
+        return any(
+            s in msg
+            for s in (
+                "server closed the connection",
+                "connection closed",
+                "connection reset",
+                "broken pipe",
+                "incompleteread",
+                "0 bytes read",
+            )
+        )
+
+    async def _ensure(self):
+        if self._client is None or self._force_reconnect:
+            if self._force_reconnect:
+                return await self._reconnect()
+            await self.start()
+            return self._client
+        try:
+            if not self._client.is_connected():
+                print("[TG] Connection lost, reconnecting...")
+                return await self._reconnect()
+        except Exception:
+            return await self._reconnect()
         return self._client
 
     async def iter_messages(self, limit: int = 0, min_id: int = 0):
@@ -243,9 +300,21 @@ class TelegramClientWrapper:
             return False
 
     async def get_message(self, message_id: int):
-        client = await self._ensure()
-        self._require_user_session()
-        return await client.get_messages(self._entity, ids=message_id)
+        last_error = None
+        for attempt in range(3):
+            client = await self._ensure()
+            self._require_user_session()
+            try:
+                return await client.get_messages(self._entity, ids=message_id)
+            except Exception as e:
+                last_error = e
+                if self._is_transport_error(e) and attempt < 2:
+                    print(f"[TG] get_message transport error (attempt {attempt+1}/3), reconnecting: {e}")
+                    self._force_reconnect = True
+                    await asyncio.sleep(0.5 * (attempt + 1))
+                    continue
+                raise
+        raise last_error
 
     async def stream_file(
         self, message_id: int, offset: int = 0, limit: int = 0,
@@ -259,7 +328,12 @@ class TelegramClientWrapper:
         self._require_user_session()
 
         if not media:
-            message = await client.get_messages(self._entity, ids=message_id)
+            try:
+                message = await self.get_message(message_id)
+            except FileNotFoundError:
+                raise
+            except Exception as e:
+                raise FileNotFoundError(f"Telegram message {message_id} unreachable: {e}")
             if not message or not message.media:
                 raise FileNotFoundError(f"Telegram message {message_id} has no media")
             media = message.media
@@ -299,6 +373,10 @@ class TelegramClientWrapper:
                     wait = RETRY_DELAY * retries
                     print(f"[TG] stream_file retry {retries}/{MAX_RETRIES} for msg {message_id} at offset {current_offset}: {e}")
                     await asyncio.sleep(wait)
+                    if self._is_transport_error(e):
+                        # Dead socket: drop it and build a fresh session so
+                        # the retry doesn't replay the same failure.
+                        self._force_reconnect = True
                     try:
                         client = await self._ensure()
                     except Exception:

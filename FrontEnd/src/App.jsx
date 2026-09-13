@@ -47,26 +47,56 @@ function App() {
     loadSongs();
     loadHomepageData();
 
-    // WebSocket for real-time updates
-    const ws = new WebSocket(getWsUrl());
+    // WebSocket for real-time updates (auto-reconnects with backoff)
+    let ws = null;
+    let wsRetry = 0;
+    let wsTimer = null;
+    let wsAlive = true;
 
-    ws.onopen = () => {
-      console.log('Connected to notification server');
-    };
-
-    ws.onmessage = (event) => {
-      if (event.data === 'library_updated') {
-        console.log('Library update received, refreshing...');
-        loadSongs();
+    const connectWs = () => {
+      if (!wsAlive) return;
+      try {
+        ws = new WebSocket(getWsUrl());
+      } catch {
+        scheduleWsRetry();
+        return;
       }
+
+      ws.onopen = () => {
+        console.log('Connected to notification server');
+        wsRetry = 0;
+      };
+
+      ws.onmessage = (event) => {
+        if (event.data === 'library_updated') {
+          console.log('Library update received, refreshing...');
+          loadSongs();
+        }
+      };
+
+      ws.onerror = () => {
+        try { ws.close(); } catch { /* closed already */ }
+      };
+
+      ws.onclose = () => {
+        scheduleWsRetry();
+      };
     };
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
+    const scheduleWsRetry = () => {
+      if (!wsAlive) return;
+      wsRetry += 1;
+      const delay = Math.min(1000 * 2 ** Math.min(wsRetry, 5), 30000);
+      clearTimeout(wsTimer);
+      wsTimer = setTimeout(connectWs, delay);
     };
+
+    connectWs();
 
     return () => {
-      ws.close();
+      wsAlive = false;
+      clearTimeout(wsTimer);
+      try { ws?.close(); } catch { /* ignore */ }
     };
   }, []);
 
