@@ -48,3 +48,17 @@ async def telegram_test_match(title: str, artist: str = ""):
         return await debug_match(title, artist)
     except TransientStoreError as e:
         raise HTTPException(status_code=502, detail=f"Store unreachable: {e}")
+
+
+@router.post("/backfill-artwork")
+async def backfill_artwork(limit: int = 100):
+    """Fetch cover art for songs missing artwork via iTunes."""
+    from app.services.channel_indexer import backfill_missing_artwork
+
+    result = await backfill_missing_artwork(limit=limit)
+    try:
+        from app.api.routes.websocket import notify_update
+        await notify_update("library_updated")
+    except Exception:
+        pass
+    return {"status": "success", **result}

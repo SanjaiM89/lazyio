@@ -6,11 +6,18 @@ class LibraryProvider with ChangeNotifier {
   List<Song> _songs = [];
   List<Playlist> _playlists = [];
   bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMoreSongs = true;
+  int _currentSongPage = 1;
   String? _error;
+
+  static const int _pageSize = 50;
 
   List<Song> get songs => _songs;
   List<Playlist> get playlists => _playlists;
   bool get isLoading => _isLoading;
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMoreSongs => _hasMoreSongs;
   String? get error => _error;
 
   bool _isInitialized = false;
@@ -37,6 +44,8 @@ class LibraryProvider with ChangeNotifier {
   }
 
   Future<void> refreshData() async {
+    _currentSongPage = 1;
+    _hasMoreSongs = true;
     try {
       await _fetchBoth();
       notifyListeners();
@@ -46,22 +55,45 @@ class LibraryProvider with ChangeNotifier {
     }
   }
 
+  Future<void> loadMoreSongs() async {
+    if (_isLoadingMore || !_hasMoreSongs) return;
+    _isLoadingMore = true;
+    notifyListeners();
+
+    try {
+      final page = await ApiService.getSongsPaginated(
+        page: _currentSongPage + 1,
+        limit: _pageSize,
+      );
+      final newSongs = page['songs'] as List<Song>;
+      final totalPages = page['pages'] as int;
+
+      _songs.addAll(newSongs);
+      _currentSongPage++;
+      _hasMoreSongs = _currentSongPage < totalPages;
+      _error = null;
+    } catch (e) {
+      print("Error loading more songs: $e");
+      _error = e.toString();
+    } finally {
+      _isLoadingMore = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> _fetchBoth() async {
     try {
       final results = await Future.wait([
-        ApiService.getSongs(),
+        ApiService.getSongsPaginated(page: 1, limit: _pageSize),
         ApiService.getPlaylists(),
       ]);
 
-      print("Songs type: ${results[0].runtimeType}");
-      print("Playlists type: ${results[1].runtimeType}");
-      if ((results[1] as List).isNotEmpty) {
-        print("First playlist item type: ${results[1][0].runtimeType}");
-        print("First playlist item: ${results[1][0]}");
-      }
+      final songPage = results[0] as Map<String, dynamic>;
+      _songs = songPage['songs'] as List<Song>;
+      final totalPages = songPage['pages'] as int;
+      _currentSongPage = 1;
+      _hasMoreSongs = _currentSongPage < totalPages;
 
-      _songs = results[0] as List<Song>;
-      
       // Parse playlists
       final rawPlaylists = results[1] as List<dynamic>;
       _playlists = rawPlaylists.map((json) {
@@ -69,7 +101,6 @@ class LibraryProvider with ChangeNotifier {
           return Playlist.fromJson(json);
         } else {
           print("WARNING: unexpected playlist item type: ${json.runtimeType} -> $json");
-          // Try to handle or skip
           return Playlist(id: 'error', name: 'Error', songCount: 0, songIds: []);
         }
       }).toList();

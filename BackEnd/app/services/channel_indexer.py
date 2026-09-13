@@ -106,6 +106,20 @@ def _parse_caption(caption: str | None, file_name: str):
     if " - " in base:
         a, t = [p.strip() for p in base.split(" - ", 1)]
         return a or "Unknown Artist", t or base
+    # Try "Title (Artist)" pattern
+    paren_match = re.match(r"^(.+?)\s*\((.+?)\)\s*$", base)
+    if paren_match:
+        return paren_match.group(2).strip(), paren_match.group(1).strip()
+    # Try "Title [Artist]" pattern
+    bracket_match = re.match(r"^(.+?)\s*\[(.+?)\]\s*$", base)
+    if bracket_match:
+        return bracket_match.group(2).strip(), bracket_match.group(1).strip()
+    # Try common separators: _, -, ~
+    for sep in [" - ", " ~ ", " _ "]:
+        if sep in base:
+            a, t = [p.strip() for p in base.split(sep, 1)]
+            if a and t:
+                return a, t
     return "Unknown Artist", base or file_name or "Untitled"
 
 
@@ -397,7 +411,50 @@ async def scan_source_channel(limit: int = 0, force: bool = False) -> dict:
     }
 
 
-async def start_periodic_rescan(interval_seconds: int = 600):
+async def backfill_missing_artwork(limit: int = 100) -> dict:
+    """On-demand backfill: fetch artwork for songs missing cover_art."""
+    from app.db.connection import songs_collection
+    from app.services.artwork import fetch_track_meta, TransientStoreError
+
+    cursor = songs_collection.find(
+        {
+            "cover_art": {"$in": [None, ""]},
+            "title": {"$nin": [None, ""]},
+        }
+    ).limit(limit)
+
+    updated = 0
+    errors = 0
+    sem = asyncio.Semaphore(3)
+
+    async def _fetch_one(song):
+        async with sem:
+            try:
+                meta = await fetch_track_meta(
+                    song.get("title", ""), song.get("artist", "")
+                )
+                return song, meta
+            except TransientStoreError:
+                return song, None
+            except Exception as e:
+                print(f"[BACKFILL] artwork fetch failed for {song.get('title')}: {e}")
+                return song, None
+
+    results = await asyncio.gather(
+        *[_fetch_one(s) async for s in cursor], return_exceptions=True
+    )
+    for r in results:
+        if isinstance(r, Exception):
+            errors += 1
+            continue
+        song, meta = r
+        if meta and meta.get("artwork"):
+            await songs_collection.update_one(
+                {"_id": song["_id"]},
+                {"$set": {"cover_art": meta["artwork"], "thumbnail": meta["artwork"]}},
+            )
+            updated += 1
+    return {"updated": updated, "errors": errors, "scanned": len(results)}
     while True:
         await asyncio.sleep(interval_seconds)
         try:

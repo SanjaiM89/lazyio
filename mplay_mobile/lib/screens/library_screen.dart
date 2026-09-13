@@ -309,32 +309,59 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             ),
           ],
         ],
-        // Song list
+        // Song list with infinite scroll
         Expanded(
           child: filteredSongs.isEmpty
               ? const Center(child: Text("No songs found", style: TextStyle(color: Colors.white38)))
-              : ListView.builder(
-                  itemCount: filteredSongs.length,
-                  padding: const EdgeInsets.only(bottom: 100),
-                  itemBuilder: (context, index) {
-                    final song = filteredSongs[index];
-                    return GestureDetector(
-                      onLongPress: () => _showSongOptionsMenu(song),
-                      child: SongTile(
-                        song: song,
-                        isPlaying: music.currentSong?.id == song.id,
-                        onTap: () {
-                          if (song.isVideo) {
-                            Provider.of<MusicProvider>(context, listen: false).stop();
-                            Provider.of<VideoProvider>(context, listen: false).playVideo(song);
-                          } else {
-                            Provider.of<VideoProvider>(context, listen: false).close();
-                            music.playSong(song, filteredSongs);
-                          }
-                        },
-                      ),
-                    );
+              : NotificationListener<ScrollNotification>(
+                  onNotification: (ScrollNotification scrollInfo) {
+                    if (scrollInfo is ScrollEndNotification &&
+                        scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 200) {
+                      Provider.of<LibraryProvider>(context, listen: false).loadMoreSongs();
+                    }
+                    return false;
                   },
+                  child: ListView.builder(
+                    itemCount: filteredSongs.length + 1,
+                    padding: const EdgeInsets.only(bottom: 100),
+                    itemBuilder: (context, index) {
+                      if (index == filteredSongs.length) {
+                        final library = Provider.of<LibraryProvider>(context);
+                        if (library.isLoadingMore) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(child: CircularProgressIndicator(color: kPrimaryColor, strokeWidth: 2)),
+                          );
+                        }
+                        if (!library.hasMoreSongs && filteredSongs.isNotEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                              child: Text("All songs loaded", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                            ),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      }
+                      final song = filteredSongs[index];
+                      return GestureDetector(
+                        onLongPress: () => _showSongOptionsMenu(song),
+                        child: SongTile(
+                          song: song,
+                          isPlaying: music.currentSong?.id == song.id,
+                          onTap: () {
+                            if (song.isVideo) {
+                              Provider.of<MusicProvider>(context, listen: false).stop();
+                              Provider.of<VideoProvider>(context, listen: false).playVideo(song);
+                            } else {
+                              Provider.of<VideoProvider>(context, listen: false).close();
+                              music.playSong(song, filteredSongs);
+                            }
+                          },
+                        ),
+                      );
+                    },
+                  ),
                 ),
         ),
       ],

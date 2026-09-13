@@ -17,6 +17,28 @@ class ApiService {
     }
   }
 
+  static Future<Map<String, dynamic>> getSongsPaginated({int page = 1, int limit = 50}) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/songs/paginated?page=$page&limit=$limit'),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> songsList = data['songs'] ?? [];
+      return {
+        'songs': songsList
+            .where((item) => item is Map<String, dynamic>)
+            .map((json) => Song.fromJson(json))
+            .toList(),
+        'page': data['page'],
+        'limit': data['limit'],
+        'total': data['total'],
+        'pages': data['pages'],
+      };
+    } else {
+      throw Exception('Failed to load paginated songs');
+    }
+  }
+
   static Future<Map<String, dynamic>> getHomepage() async {
     final response = await http.get(Uri.parse('${AppConfig.baseUrl}/api/home'));
     if (response.statusCode == 200) {

@@ -159,7 +159,7 @@ export const scanTelegramChannel = async (force = false) => {
 
 // ==================== Songs Management ====================
 
-export const getSongsPaginated = async (page = 1, limit = 20) => {
+export const getSongsPaginated = async (page = 1, limit = 50) => {
     const response = await api.get('/songs/paginated', { params: { page, limit } });
     return response.data;
 };

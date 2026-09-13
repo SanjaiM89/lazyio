@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { getSongs, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { getSongs, getSongsPaginated, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
 import Player from './Player';
 import Upload from './Upload';
 import Albums from './Albums';
@@ -19,6 +19,10 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [libraryPage, setLibraryPage] = useState(1);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [hasMoreSongs, setHasMoreSongs] = useState(true);
+  const libraryRef = useRef(null);
 
   // Playlist Modal State
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
@@ -66,14 +70,27 @@ function App() {
     };
   }, []);
 
-  const loadSongs = async () => {
+  const loadMoreSongs = useCallback(() => {
+    if (libraryLoading || !hasMoreSongs) return;
+    loadSongs(libraryPage + 1, true);
+  }, [libraryLoading, hasMoreSongs, libraryPage]);
+
+  const loadSongs = async (page = 1, append = false) => {
     try {
-      const data = await getSongs();
-      setSongs(data);
+      setLibraryLoading(true);
+      const data = await getSongsPaginated(page, 50);
+      if (append) {
+        setSongs(prev => [...prev, ...data.songs]);
+      } else {
+        setSongs(data.songs);
+      }
+      setHasMoreSongs(page < data.pages);
+      setLibraryPage(page);
     } catch (error) {
       console.error("Error loading songs:", error);
     } finally {
-      if (songs.length > 0) setLoading(false);
+      setLibraryLoading(false);
+      setLoading(false);
     }
   };
 
@@ -228,7 +245,12 @@ function App() {
         {view === 'playlists' && <Playlists onPlaySong={handlePlaySong} onNavigate={handleNavigate} onOpenPlaylistModal={handleAddToPlaylist} />}
 
         {view === 'playlist' && (
-          <div className="h-full flex-1 overflow-y-auto p-8">
+          <div className="h-full flex-1 overflow-y-auto p-8" ref={libraryRef} onScroll={(e) => {
+            const { scrollTop, scrollHeight, clientHeight } = e.target;
+            if (scrollHeight - scrollTop - clientHeight < 200) {
+              loadMoreSongs();
+            }
+          }}>
             <div className="max-w-4xl mx-auto">
               <h1 className="text-3xl font-bold mb-8 animate-fade-in">Your Library</h1>
               {loading ? (
@@ -248,13 +270,13 @@ function App() {
                   </button>
                 </div>
               ) : (
+                <>
                 <div className="space-y-2">
                   {songs.map((song, index) => (
                     <div
                       key={song.id}
                       className={`group song-item flex items-center gap-4 p-4 rounded-xl cursor-pointer animate-fade-in
                         ${currentSong?.id === song.id ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5'}`}
-                      style={{ animationDelay: `${index * 0.05}s` }}
                       onClick={() => handlePlaySong(song)}
                     >
                       <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
@@ -276,7 +298,6 @@ function App() {
                       </div>
 
                       {/* Song Menu - visible on hover */}
-                      {/* Song Menu - visible on hover */}
                       <SongMenu
                         className="opacity-0 group-hover:opacity-100 transition mr-2"
                         song={song}
@@ -284,7 +305,7 @@ function App() {
                         onDelete={async (s) => {
                           try {
                             await deleteSong(s.id);
-                            loadSongs(); // Refresh list via App's loadSongs
+                            loadSongs();
                           } catch (err) {
                             console.error("Failed to delete song:", err);
                           }
@@ -298,6 +319,15 @@ function App() {
                     </div>
                   ))}
                 </div>
+                {libraryLoading && (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="w-8 h-8 rounded-full border-2 border-pink-500/30 border-t-pink-500 animate-spin" />
+                  </div>
+                )}
+                {!hasMoreSongs && songs.length > 0 && (
+                  <p className="text-center text-white/30 text-sm py-6">All songs loaded</p>
+                )}
+                </>
               )}
             </div>
           </div>
