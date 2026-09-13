@@ -40,7 +40,7 @@ class Song {
     // Telegram-backed library: message id is the stream key
     int? tgId;
     final rawTg = json['telegram_message_id'] ?? json['audio_telegram_id'];
-    if (rawTg is not null) {
+    if (rawTg != null) {
       tgId = rawTg is int ? rawTg : int.tryParse(rawTg.toString());
     }
     // Robust video detection: check flag OR existence of video id
