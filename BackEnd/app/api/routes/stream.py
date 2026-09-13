@@ -1,7 +1,7 @@
 import re
 import time
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 
 from app.db.crud.songs import get_song_raw_by_id
 from app.services.telegram import telegram_client
@@ -33,7 +33,6 @@ async def diagnose_song(song_id: str):
     media = info.get("media")
     file_size = info.get("file_size", 0)
 
-    # Try downloading first 1KB
     ok = False
     err = None
     if media:
@@ -81,23 +80,25 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
                 print(f"[STREAM] S3 fallback failed: {e}")
         raise HTTPException(status_code=404, detail="Song has no Telegram media")
 
-    # Fetch file info + media handle in ONE call
     try:
         info = await telegram_client.file_info(message_id)
     except Exception as e:
         from app.services.telegram import TelegramBotLimitedError
-
         if isinstance(e, TelegramBotLimitedError):
             raise HTTPException(status_code=503, detail=str(e))
         print(f"[STREAM] file_info error for {song_id} (msg={message_id}): {e}")
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
     if not info:
-        print(f"[STREAM] No media found for {song_id} (msg={message_id})")
+        print(f"[STREAM] No media for {song_id} (msg={message_id})")
         raise HTTPException(status_code=404, detail="Telegram media not found")
 
     file_size = info["file_size"]
     mime_type = info.get("mime_type") or "audio/mpeg"
     media = info["media"]
+
+    if not media:
+        print(f"[STREAM] Media object is None for {song_id} (msg={message_id})")
+        raise HTTPException(status_code=404, detail="Telegram media object is None")
 
     range_header = request.headers.get("range")
     start = 0

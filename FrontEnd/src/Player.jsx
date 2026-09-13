@@ -142,11 +142,36 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
     const [duration, setDuration] = useState(0);
     const [volume, setVolume] = useState(0.8);
     const [mode, setMode] = useState('audio');
-    const [preferredMode, setPreferredMode] = useState('audio'); // User's video preference
+    const [preferredMode, setPreferredMode] = useState('audio');
     const [videoLoading, setVideoLoading] = useState(false);
     const [videoError, setVideoError] = useState(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isBuffering, setIsBuffering] = useState(false);
+    const [playError, setPlayError] = useState(null);
+    const skipTimerRef = useRef(null);
+
+    const handleAudioError = () => {
+        const audio = audioRef.current;
+        if (!audio || !currentSong) return;
+        // MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED = 4
+        // This means the server returned non-audio content (like a JSON error)
+        const err = audio.error;
+        if (err && (err.code === 4 || err.code === 2)) {
+            console.error(`Audio error for "${currentSong.title}": ${err.message} (code ${err.code})`);
+            setPlayError(`Cannot play "${currentSong.title}" — server may be unreachable`);
+            // Auto-skip after 2s
+            skipTimerRef.current = setTimeout(() => {
+                setPlayError(null);
+                onNext?.();
+            }, 2000);
+        }
+    };
+
+    useEffect(() => {
+        return () => {
+            if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+        };
+    }, []);
 
     // Initial load & Song Change
     const hasVideo = currentSong?.hasVideo || currentSong?.has_video;
@@ -155,17 +180,20 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
         if (!currentSong) return;
 
         setVideoError(null);
+        setPlayError(null);
         setIsPlaying(true);
 
-        // If user prefers video AND song has video, use video mode
         if (preferredMode === 'video' && hasVideo) {
             setMode('video');
-            // Video will auto-play via onLoadedMetadata
         } else {
-            // Fallback to audio (or user prefers audio)
             setMode('audio');
             setTimeout(() => {
-                if (audioRef.current) audioRef.current.play().catch(e => console.error("Play error:", e));
+                if (audioRef.current) {
+                    audioRef.current.play().catch(e => {
+                        console.error("Play error:", e);
+                        setPlayError(`Cannot play "${currentSong.title}"`);
+                    });
+                }
             }, 50);
         }
     }, [currentSong, preferredMode, hasVideo]);
@@ -420,7 +448,9 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                         </div>
                         <div className="min-w-0">
                             <p className="font-bold text-white truncate text-base">{currentSong.title}</p>
-                            <p className="text-sm text-white/60 truncate">{currentSong.artist}</p>
+                            <p className={`text-sm truncate ${playError ? 'text-red-400' : 'text-white/60'}`}>
+                              {playError || currentSong.artist}
+                            </p>
                         </div>
                     </>
                 ) : (
@@ -487,7 +517,11 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                 src={currentSong ? getStreamUrl(currentSong.id) : undefined}
                 onTimeUpdate={mode === 'audio' ? handleTimeUpdate : undefined}
                 onEnded={onNext}
-                onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+                onError={handleAudioError}
+                onLoadedMetadata={() => {
+                    setDuration(audioRef.current?.duration || 0);
+                    setPlayError(null);
+                }}
                 style={{ display: 'none' }}
             />
         </>
