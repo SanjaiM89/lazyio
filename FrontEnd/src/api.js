@@ -126,6 +126,25 @@ export const getAlbum = async (albumId) => {
     return response.data;
 };
 
+// ==================== Search (songs + albums + artists) ====================
+
+export const searchLibrary = async (query) => {
+    const response = await api.get('/search', { params: { q: query } });
+    return response.data;
+};
+
+// ==================== Artists ====================
+
+export const getArtists = async (page = 1, limit = 20, query = '') => {
+    const response = await api.get('/artists', { params: { page, limit, query } });
+    return response.data;
+};
+
+export const getArtist = async (name) => {
+    const response = await api.get(`/artists/${encodeURIComponent(name)}`);
+    return response.data;
+};
+
 // ==================== Telegram channel ====================
 
 export const getTelegramStatus = async () => {

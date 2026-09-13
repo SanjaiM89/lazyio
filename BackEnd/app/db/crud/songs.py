@@ -3,29 +3,98 @@ from bson import ObjectId
 from app.db.connection import songs_collection, albums_collection
 
 
+# Bump when album_key_for grouping rules change: scans rebuild albums once
+# when the stored version differs, then persist the new version.
+GROUPING_VERSION = 3
+
+# Placeholders that may be overwritten by enriched metadata — never let a
+# placeholder clobber a real value on re-scans.
+GENERIC_ALBUMS = {"", "Unknown Album", "Unknown", "Telegram", "Audio", None}
+GENERIC_ARTISTS = {"", "Unknown Artist", "Unknown", None}
+
+# Qualifiers that don't change *which* song it is — stripped for grouping so
+# "Song (Official Video)", "Song - Lyric Video" and "song_hq" land together.
+_GROUPING_NOISE = [
+    "official music video",
+    "official video",
+    "official audio",
+    "official lyric video",
+    "official visualizer",
+    "official",
+    "music video",
+    "lyric video",
+    "lyrics video",
+    "visualizer",
+    "visualiser",
+    "audio",
+    "lyrics",
+    "remastered",
+    "remaster",
+    "hq",
+    "hd",
+    "4k",
+    "mv",
+]
+
+
 def normalize_text(value: str | None) -> str:
     if not value:
         return ""
     value = value.strip().lower()
-    # remove bracketed extras like (official video), [hq], etc.? keep simple
     value = re.sub(r"\s+", " ", value)
     return value
+
+
+def normalize_title_for_grouping(title: str | None) -> str:
+    """Core song title used for grouping (display title is left untouched)."""
+    if not title:
+        return ""
+    value = title.strip().lower()
+    # strip file extension
+    value = re.sub(r"\.(mp3|m4a|flac|wav|ogg|opus|aac|mp4|mkv|webm|avi|mov)$", "", value)
+    # drop bracketed qualifiers: (official video), [hq], ...
+    value = re.sub(r"\([^)]*\)", " ", value)
+    value = re.sub(r"\[[^\]]*\]", " ", value)
+    # separators -> space
+    value = re.sub(r"[_.\-]+", " ", value)
+    # drop noise words
+    for noise in _GROUPING_NOISE:
+        value = re.sub(rf"\b{re.escape(noise)}\b", " ", value)
+    # drop leftover punctuation, collapse whitespace
+    value = re.sub(r"[^a-z0-9 ]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def normalize_artist_for_grouping(artist: str | None) -> str:
+    """Normalize artist: handles 'Artist - Topic' (YouTube auto-channels) and VEVO."""
+    if not artist:
+        return ""
+    value = artist.strip().lower()
+    value = re.sub(r"\s*-\s*topic\s*$", "", value)
+    value = re.sub(r"\bvevo\b", "", value)
+    value = re.sub(r"[^a-z0-9 ]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value or "unknown artist"
 
 
 def album_key_for(title: str | None, artist: str | None, album: str | None) -> str:
     """Group 'same music names' together.
 
     Primary grouping: normalized album name if present and not generic,
-    else normalized 'artist - title' so covers/duplicates land together.
+    else normalized artist + core title (qualifiers like "official video",
+    "[hq]", "- Topic" stripped) so duplicates/covers land together.
+    Display titles are never modified — only the grouping key.
     """
     norm_album = normalize_text(album)
+    # "Song - Single" collections are just the single itself; drop the suffix
+    # so singles don't get odd album names.
+    norm_album = re.sub(r"\s*-\s*single\s*$", "", norm_album)
     generic = {"", "unknown album", "unknown", "telegram", "audio"}
     if norm_album and norm_album not in generic:
         return f"album:{norm_album}"
-    norm_artist = normalize_text(artist)
-    norm_title = normalize_text(title)
-    # strip file extension from title for grouping
-    norm_title = re.sub(r"\.(mp3|m4a|flac|wav|ogg|mp4|mkv|webm)$", "", norm_title)
+    norm_artist = normalize_artist_for_grouping(artist)
+    norm_title = normalize_title_for_grouping(title)
     return f"track:{norm_artist}|{norm_title}"
 
 
@@ -57,6 +126,11 @@ def song_helper(song) -> dict:
         "artist": song.get("artist"),
         "album": song.get("album"),
         "album_key": song.get("album_key"),
+        "year": song.get("year"),
+        "genre": song.get("genre"),
+        "play_count": song.get("play_count", 0),
+        "meta_checked": song.get("meta_checked", False),
+        "meta_match": song.get("meta_match", False),
         "duration": song.get("duration"),
         "cover_art": song.get("cover_art") or song.get("thumbnail"),
         "thumbnail": song.get("thumbnail"),
@@ -70,7 +144,13 @@ def song_helper(song) -> dict:
 
 async def ensure_song_indexes():
     try:
-        await songs_collection.create_index("telegram_message_id", unique=False)
+        # One DB row per Telegram message: partial unique index (only docs
+        # with a positive int message id are covered, legacy rows ignored).
+        await songs_collection.create_index(
+            "telegram_message_id",
+            unique=True,
+            partialFilterExpression={"telegram_message_id": {"$gt": 0}},
+        )
     except Exception:
         pass
     try:
@@ -104,6 +184,10 @@ async def add_song(
     telegram_message_id: int = None,
     mime_type: str = None,
     source_channel: str = None,
+    year: int = None,
+    genre: str = None,
+    meta_checked: bool = None,
+    meta_match: bool = None,
 ):
     # Dedupe: prefer telegram id, else file/title match
     existing = None
@@ -127,9 +211,15 @@ async def add_song(
             updates["telegram_message_id"] = telegram_message_id
         if title:
             updates["title"] = title
-        if artist:
+        # Never let a placeholder ("Unknown Album"/"Unknown Artist") clobber
+        # a real enriched value on re-scans; specific values always win.
+        if artist and (
+            existing.get("artist") in GENERIC_ARTISTS or artist not in GENERIC_ARTISTS
+        ):
             updates["artist"] = artist
-        if album:
+        if album and (
+            existing.get("album") in GENERIC_ALBUMS or album not in GENERIC_ALBUMS
+        ):
             updates["album"] = album
         if duration:
             updates["duration"] = duration
@@ -145,6 +235,15 @@ async def add_song(
             updates["mime_type"] = mime_type
         if source_channel:
             updates["source_channel"] = source_channel
+        # Stable store metadata: fill when missing, never overwrite.
+        if year and not existing.get("year"):
+            updates["year"] = year
+        if genre and not existing.get("genre"):
+            updates["genre"] = genre
+        if meta_checked is not None:
+            updates["meta_checked"] = meta_checked
+        if meta_match is not None:
+            updates["meta_match"] = meta_match
         if has_video:
             updates["has_video"] = True
         await songs_collection.update_one({"_id": existing["_id"]}, {"$set": updates})
@@ -167,6 +266,11 @@ async def add_song(
         "file_size": file_size,
         "mime_type": mime_type,
         "source_channel": source_channel,
+        "year": year,
+        "genre": genre,
+        "play_count": 0,
+        "meta_checked": meta_checked,
+        "meta_match": meta_match,
     }
     new_song = await songs_collection.insert_one(song_data)
     await upsert_album_for_song({**song_data, "_id": new_song.inserted_id})
@@ -179,8 +283,7 @@ async def upsert_album_for_song(song: dict):
         song.get("title"), song.get("artist"), song.get("album")
     )
     album_name = song.get("album")
-    generic = {"", "Unknown Album", "Unknown", None}
-    if not album_name or album_name in generic:
+    if not album_name or album_name in GENERIC_ALBUMS:
         # derive display name from title grouping
         album_name = song.get("title") or "Untitled"
     cover = song.get("cover_art") or song.get("thumbnail")
@@ -250,6 +353,15 @@ async def get_song_by_id(song_id: str):
 async def get_song_raw_by_id(song_id: str):
     try:
         return await songs_collection.find_one({"_id": ObjectId(song_id)})
+    except Exception:
+        return None
+
+
+async def get_song_by_telegram_id(message_id: int) -> dict | None:
+    """Dedupe lookup: one DB row per Telegram message id."""
+    try:
+        doc = await songs_collection.find_one({"telegram_message_id": message_id})
+        return song_helper(doc) if doc else None
     except Exception:
         return None
 
@@ -372,6 +484,8 @@ async def get_album_with_songs(album_id: str) -> dict | None:
         s = await get_song_by_id(sid)
         if s:
             songs.append(s)
+    # Deterministic track order (movie albums list A–Z).
+    songs.sort(key=lambda s: (s.get("title") or "").casefold())
     return {
         "id": str(a["_id"]),
         "album_key": a.get("album_key"),
@@ -381,3 +495,208 @@ async def get_album_with_songs(album_id: str) -> dict | None:
         "song_count": len(songs),
         "songs": songs,
     }
+
+
+async def get_artists(page: int = 1, limit: int = 20, query: str = None) -> dict:
+    """Artist directory: raw artist names merged by normalized key."""
+    match = {"artist": {"$nin": [None, "", "Unknown Artist", "Unknown"]}}
+    if query and query.strip():
+        match["artist"] = {
+            **match["artist"],
+            "$regex": query.strip(),
+            "$options": "i",
+        }
+    pipeline = [
+        {"$match": match},
+        {
+            "$group": {
+                "_id": "$artist",
+                "song_count": {"$sum": 1},
+                "albums": {"$addToSet": "$album_key"},
+                "total_plays": {"$sum": {"$ifNull": ["$play_count", 0]}},
+            }
+        },
+    ]
+    buckets: dict = {}
+    async for doc in songs_collection.aggregate(pipeline):
+        raw = doc["_id"] or ""
+        key = normalize_artist_for_grouping(raw)
+        b = buckets.setdefault(
+            key, {"names": {}, "song_count": 0, "albums": set(), "total_plays": 0}
+        )
+        b["names"][raw] = b["names"].get(raw, 0) + doc.get("song_count", 0)
+        b["song_count"] += doc.get("song_count", 0)
+        b["total_plays"] += doc.get("total_plays", 0) or 0
+        for ak in doc.get("albums", []) or []:
+            if ak:
+                b["albums"].add(ak)
+
+    merged = []
+    for key, b in buckets.items():
+        display = max(b["names"].items(), key=lambda kv: kv[1])[0]
+        merged.append(
+            {
+                "key": key,
+                "name": display,
+                "raw_names": sorted(b["names"]),
+                "song_count": b["song_count"],
+                "album_count": len(b["albums"]),
+                "total_plays": b["total_plays"],
+            }
+        )
+    merged.sort(key=lambda a: (-a["song_count"], a["name"].casefold()))
+    total = len(merged)
+    start = (page - 1) * limit
+    page_items = merged[start : start + limit]
+    # Cover: art from the most-played track that has any; fall back to an
+    # artist-level store lookup so artists aren't blank when songs lack art.
+    for item in page_items:
+        cover = None
+        async for s in songs_collection.find(
+            {
+                "artist": {"$in": item["raw_names"]},
+                "cover_art": {"$nin": [None, ""]},
+            }
+        ).sort("play_count", -1).limit(1):
+            cover = s.get("cover_art") or s.get("thumbnail")
+        item["cover_art"] = cover
+    missing = [item for item in page_items if not item["cover_art"]]
+    if missing:
+        import asyncio as _asyncio
+
+        from app.services.artwork import fetch_artist_art as _artist_art
+
+        arts = await _asyncio.gather(
+            *[_artist_art(item["name"]) for item in missing],
+            return_exceptions=True,
+        )
+        for item, art in zip(missing, arts):
+            if isinstance(art, str) and art:
+                item["cover_art"] = art
+    for item in page_items:
+        del item["raw_names"]
+    return {
+        "artists": page_items,
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": (total + limit - 1) // limit if total > 0 else 1,
+    }
+
+
+def _artist_song_sort_key(s: dict):
+    """Played songs first (most plays first); unplayed by latest year/album."""
+    plays = s.get("play_count", 0) or 0
+    year = s.get("year") or 0
+    return (
+        plays == 0,
+        -plays,
+        -year,
+        (s.get("album") or "").casefold(),
+        (s.get("title") or "").casefold(),
+    )
+
+
+async def get_artist_detail(name: str) -> dict | None:
+    """Artist profile: songs ordered by plays, then latest year/album."""
+    key = normalize_artist_for_grouping(name)
+    if not key or key == "unknown artist":
+        return None
+    try:
+        raws = await songs_collection.distinct("artist")
+    except Exception:
+        return None
+    variants = [r for r in raws if r and normalize_artist_for_grouping(r) == key]
+    if not variants:
+        return None
+    songs = [
+        song_helper(d)
+        async for d in songs_collection.find({"artist": {"$in": variants}})
+    ]
+    if not songs:
+        return None
+    songs.sort(key=_artist_song_sort_key)
+
+    from collections import Counter
+
+    display = Counter(s.get("artist", "") for s in songs).most_common(1)[0][0]
+    # Group by album_key (stable across naming variants), display the most
+    # common album name. Include the album's DB id so clients can open it.
+    albums_map: dict = {}
+    for s in songs:
+        akey = s.get("album_key") or f"name:{(s.get('album') or 'Unknown Album').casefold()}"
+        a = albums_map.setdefault(
+            akey,
+            {"name": "", "names": Counter(), "year": 0, "cover_art": None, "song_count": 0},
+        )
+        a["names"][s.get("album") or "Unknown Album"] += 1
+        a["song_count"] += 1
+        if (s.get("year") or 0) > a["year"]:
+            a["year"] = s.get("year")
+        if not a["cover_art"] and s.get("cover_art"):
+            a["cover_art"] = s.get("cover_art")
+    albums = []
+    for akey, a in albums_map.items():
+        album_id = None
+        try:
+            doc = await albums_collection.find_one({"album_key": akey})
+            if doc:
+                album_id = str(doc["_id"])
+                if not a["cover_art"]:
+                    a["cover_art"] = doc.get("cover_art")
+        except Exception:
+            pass
+        albums.append(
+            {
+                "id": album_id,
+                "name": a["names"].most_common(1)[0][0],
+                "year": a["year"] or None,
+                "cover_art": a["cover_art"],
+                "song_count": a["song_count"],
+            }
+        )
+    albums.sort(key=lambda a: (-(a["year"] or 0), (a["name"] or "").casefold()))
+    cover = next((s.get("cover_art") for s in songs if s.get("cover_art")), None)
+    if not cover:
+        try:
+            from app.services.artwork import fetch_artist_art as _artist_art
+
+            cover = await _artist_art(display)
+        except Exception:
+            cover = None
+    return {
+        "key": key,
+        "name": display,
+        "cover_art": cover,
+        "song_count": len(songs),
+        "album_count": len(albums),
+        "total_plays": sum(s.get("play_count", 0) or 0 for s in songs),
+        "songs": songs,
+        "albums": albums,
+    }
+
+
+async def search_library(
+    query: str, song_limit: int = 8, album_limit: int = 8, artist_limit: int = 8
+) -> dict:
+    """Unified search across songs, albums and artists."""
+    q = (query or "").strip()
+    if not q:
+        return {"songs": [], "albums": [], "artists": []}
+    songs = await search_songs(q)
+    rx = {"$regex": q, "$options": "i"}
+    albums = []
+    async for a in albums_collection.find(
+        {"$or": [{"name": rx}, {"artist": rx}]}
+    ).limit(album_limit):
+        albums.append(
+            {
+                "id": str(a["_id"]),
+                "name": a.get("name"),
+                "artist": a.get("artist"),
+                "cover_art": a.get("cover_art"),
+                "song_count": len(a.get("song_ids", []) or []),
+            }
+        )
+    artists = (await get_artists(page=1, limit=artist_limit, query=q))["artists"]
+    return {"songs": songs[:song_limit], "albums": albums, "artists": artists}

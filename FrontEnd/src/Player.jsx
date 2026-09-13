@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getStreamUrl, getVideoStreamUrl } from './api';
+import SongMenu from './SongMenu';
 
 // Video Player Component (Extracted to prevent re-renders)
 const VideoPlayer = ({
@@ -132,7 +133,7 @@ const ModeToggle = ({ currentSong, mode, switchMode }) => {
     );
 };
 
-const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, fullView = false, onToggleView }) => {
+const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, fullView = false, onToggleView, onOpenPlaylistModal }) => {
     const audioRef = useRef(null);
     const videoRef = useRef(null);
     const videoContainerRef = useRef(null);
@@ -341,7 +342,16 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
                     {mode === 'audio' && (
                         <div className="w-full max-w-lg z-10">
                             <div className="text-center mb-8">
-                                <h1 className="text-3xl font-bold text-white mb-2">{currentSong?.title || "Unknown Title"}</h1>
+                                <div className="flex items-center justify-center gap-2">
+                                    <h1 className="text-3xl font-bold text-white mb-2">{currentSong?.title || "Unknown Title"}</h1>
+                                    {currentSong && onOpenPlaylistModal && (
+                                        <SongMenu
+                                            song={currentSong}
+                                            onAddToPlaylist={onOpenPlaylistModal}
+                                            className="mb-2"
+                                        />
+                                    )}
+                                </div>
                                 <p className="text-xl text-white/60">{currentSong?.artist || "Unknown Artist"}</p>
                             </div>
 
@@ -449,6 +459,13 @@ const Player = ({ currentSong, onNext, onPrev, playlist = [], onSelectSong, full
 
             {/* Volume / Extra */}
             <div className="hidden md:flex items-center gap-3 w-1/3 justify-end" onClick={e => e.stopPropagation()}>
+                {currentSong && onOpenPlaylistModal && (
+                    <SongMenu
+                        song={currentSong}
+                        onAddToPlaylist={onOpenPlaylistModal}
+                        dropUp={true}
+                    />
+                )}
                 <button className="text-white/60 hover:text-white">
                     <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
                 </button>

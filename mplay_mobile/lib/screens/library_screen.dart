@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
@@ -7,8 +8,9 @@ import '../library_provider.dart';
 import '../widgets/song_tile.dart';
 import '../constants.dart';
 import '../providers/video_provider.dart';
-import 'video_player_screen.dart';
-import 'playlist_detail_screen.dart'; // Ensure Import
+import 'playlist_detail_screen.dart';
+import 'album_detail_screen.dart';
+import 'artist_detail_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -21,12 +23,15 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   final TextEditingController _searchController = TextEditingController();
   late TabController _tabController;
   String _searchQuery = "";
+  List<Album> _searchAlbums = [];
+  List<Artist> _searchArtists = [];
+  bool _searching = false;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    // Initial fetch if needed
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<LibraryProvider>(context, listen: false).loadData();
     });
@@ -36,55 +41,89 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() => _searchQuery = val);
+    _searchDebounce?.cancel();
+    if (val.trim().length < 2) {
+      setState(() {
+        _searchAlbums = [];
+        _searchArtists = [];
+        _searching = false;
+      });
+      return;
+    }
+    setState(() => _searching = true);
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      try {
+        final data = await ApiService.searchLibrary(val.trim());
+        if (!mounted) return;
+        setState(() {
+          _searchAlbums = ((data['albums'] ?? []) as List)
+              .map((j) => Album.fromJson(j as Map<String, dynamic>))
+              .toList();
+          _searchArtists = ((data['artists'] ?? []) as List)
+              .map((j) => Artist.fromJson(j as Map<String, dynamic>))
+              .toList();
+          _searching = false;
+        });
+      } catch (e) {
+        if (mounted) setState(() => _searching = false);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final music = Provider.of<MusicProvider>(context);
+    final pad = Layout.horizontalPadding(context);
+    final topPad = Layout.topPadding(context);
+    final isTablet = Layout.isTablet(context);
 
     return Scaffold(
+      backgroundColor: kBackgroundColor,
       body: Column(
         children: [
           // Header
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 60, 16, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, topPad, pad, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      "Library", 
-                      style: TextStyle(
-                        fontSize: 32, 
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add_rounded),
-                      onPressed: _showCreatePlaylistDialog,
-                    ),
-                  ],
+                Text(
+                  'Library',
+                  style: TextStyle(
+                    fontSize: isTablet ? 38 : 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
                 ),
-                const SizedBox(height: 16),
-                // Tabs
-                TabBar(
-                  controller: _tabController,
-                  labelColor: kPrimaryColor,
-                  unselectedLabelColor: Colors.white54,
-                  indicatorColor: kPrimaryColor,
-                  tabs: const [
-                    Tab(text: "Songs"),
-                    Tab(text: "Playlists"),
-                  ],
+                IconButton(
+                  icon: const Icon(Icons.add_rounded),
+                  onPressed: _showCreatePlaylistDialog,
                 ),
               ],
             ),
           ),
-          
+          // Tabs
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: pad),
+            child: TabBar(
+              controller: _tabController,
+              labelColor: kPrimaryColor,
+              unselectedLabelColor: Colors.white54,
+              indicatorColor: kPrimaryColor,
+              indicatorSize: TabBarIndicatorSize.label,
+              tabs: const [
+                Tab(text: "Songs"),
+                Tab(text: "Playlists"),
+              ],
+            ),
+          ),
+
           // Content
           Expanded(
             child: Consumer<LibraryProvider>(
@@ -92,7 +131,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 if (library.isLoading && library.songs.isEmpty) {
                   return const Center(child: CircularProgressIndicator(color: kPrimaryColor));
                 }
-                
+
                 if (library.error != null && library.songs.isEmpty) {
                   return Center(
                     child: Column(
@@ -113,10 +152,8 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    // Songs Tab
-                    _buildSongsTab(music, library.songs),
-                    // Playlists Tab
-                    _buildPlaylistsTab(library.playlists),
+                    _buildSongsTab(music, library.songs, pad),
+                    _buildPlaylistsTab(library.playlists, pad),
                   ],
                 );
               },
@@ -127,12 +164,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildSongsTab(MusicProvider music, List<Song> songs) {
-    // Filter songs locally
-    final filteredSongs = _searchQuery.isEmpty 
-        ? songs 
-        : songs.where((s) => 
-            s.title.toLowerCase().contains(_searchQuery.toLowerCase()) || 
+  Widget _buildSongsTab(MusicProvider music, List<Song> songs, double pad) {
+    final filteredSongs = _searchQuery.isEmpty
+        ? songs
+        : songs.where((s) =>
+            s.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             s.artist.toLowerCase().contains(_searchQuery.toLowerCase())
           ).toList();
 
@@ -140,18 +176,18 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
       children: [
         // Search
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: EdgeInsets.all(pad),
           child: Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(14),
+              color: kSurfaceColor,
+              borderRadius: BorderRadius.circular(12),
             ),
             child: TextField(
               controller: _searchController,
-              onChanged: (val) => setState(() => _searchQuery = val),
+              onChanged: _onSearchChanged,
               style: const TextStyle(color: Colors.white),
               decoration: const InputDecoration(
-                hintText: "Search songs, artists...",
+                hintText: "Search songs, albums, artists...",
                 hintStyle: TextStyle(color: Colors.white38),
                 prefixIcon: Icon(Icons.search, color: Colors.white38),
                 border: InputBorder.none,
@@ -160,13 +196,126 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             ),
           ),
         ),
-        // List
+        // Server results: artists + albums
+        if (_searchQuery.trim().length >= 2) ...[
+          if (_searching)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+          if (_searchArtists.isNotEmpty) ...[
+            Padding(
+              padding: EdgeInsets.fromLTRB(pad, 4, pad, 8),
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: Text("Artists", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70)),
+              ),
+            ),
+            SizedBox(
+              height: 96,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: pad),
+                itemCount: _searchArtists.length,
+                itemBuilder: (context, i) {
+                  final artist = _searchArtists[i];
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => ArtistDetailScreen(artistName: artist.name)),
+                    ),
+                    child: Container(
+                      width: 72,
+                      margin: const EdgeInsets.only(right: 12),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 56,
+                            height: 56,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: kSurfaceColor,
+                              image: artist.coverArt != null
+                                  ? DecorationImage(image: NetworkImage(artist.coverArt!), fit: BoxFit.cover)
+                                  : null,
+                            ),
+                            child: artist.coverArt == null
+                                ? const Icon(Icons.person, color: Colors.white38)
+                                : null,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(artist.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          if (_searchAlbums.isNotEmpty) ...[
+            Padding(
+              padding: EdgeInsets.fromLTRB(pad, 8, pad, 8),
+              child: const Align(
+                alignment: Alignment.centerLeft,
+                child: Text("Albums", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70)),
+              ),
+            ),
+            SizedBox(
+              height: 150,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: pad),
+                itemCount: _searchAlbums.length,
+                itemBuilder: (context, i) {
+                  final album = _searchAlbums[i];
+                  return GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => AlbumDetailScreen(albumId: album.id)),
+                    ),
+                    child: Container(
+                      width: 110,
+                      margin: const EdgeInsets.only(right: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(8),
+                                color: kSurfaceColor,
+                                image: album.coverArt != null
+                                    ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
+                                    : null,
+                              ),
+                              child: album.coverArt == null
+                                  ? const Center(child: Icon(Icons.album, color: Colors.white24))
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text('${album.songCount} songs',
+                              style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+        // Song list
         Expanded(
-          child: filteredSongs.isEmpty 
+          child: filteredSongs.isEmpty
               ? const Center(child: Text("No songs found", style: TextStyle(color: Colors.white38)))
               : ListView.builder(
                   itemCount: filteredSongs.length,
-                  padding: const EdgeInsets.only(bottom: 100, left: 16, right: 16), 
+                  padding: const EdgeInsets.only(bottom: 100),
                   itemBuilder: (context, index) {
                     final song = filteredSongs[index];
                     return GestureDetector(
@@ -192,7 +341,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildPlaylistsTab(List<Playlist> playlists) {
+  Widget _buildPlaylistsTab(List<Playlist> playlists, double pad) {
     if (playlists.isEmpty) {
       return Center(
         child: Column(
@@ -211,40 +360,36 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         ),
       );
     }
-    
+
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(pad),
       itemCount: playlists.length,
       itemBuilder: (context, index) {
         final pl = playlists[index];
         return Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
+            color: kSurfaceColor,
             borderRadius: BorderRadius.circular(14),
           ),
           child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PlaylistDetailScreen(playlist: pl),
-                ),
-              );
-            },
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlist: pl)),
+            ),
             leading: SizedBox(
-              width: 56,
-              height: 56,
+              width: 52,
+              height: 52,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(10),
                 child: pl.coverImage != null
                     ? Image.network(pl.coverImage!, fit: BoxFit.cover)
                     : Container(
                         decoration: const BoxDecoration(
-                          gradient: LinearGradient(colors: [kPrimaryColor, kSecondaryColor]),
+                          gradient: LinearGradient(colors: [kPrimaryColor, Color(0xFFFF6B6B)]),
                         ),
-                        child: const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 28),
+                        child: const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 26),
                       ),
               ),
             ),
@@ -252,14 +397,13 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             subtitle: Text("${pl.songCount} songs", style: const TextStyle(color: Colors.white54, fontSize: 13)),
             trailing: PopupMenuButton(
               icon: const Icon(Icons.more_vert, color: Colors.white54),
-              color: const Color(0xFF1a1a2e),
+              color: kSurfaceColor,
               itemBuilder: (ctx) => [
                 const PopupMenuItem(value: 'delete', child: Text("Delete")),
               ],
               onSelected: (val) async {
                 if (val == 'delete') {
                   await ApiService.deletePlaylist(pl.id);
-                  // Refresh via Provider
                   if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
                 }
               },
@@ -275,7 +419,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: kSurfaceColor,
         title: const Text("New Playlist"),
         content: TextField(
           controller: controller,
@@ -287,10 +431,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text("Cancel"),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
           TextButton(
             onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
@@ -307,11 +448,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   }
 
   void _showSongOptionsMenu(Song song) {
-     final library = Provider.of<LibraryProvider>(context, listen: false);
+    final library = Provider.of<LibraryProvider>(context, listen: false);
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: kSurfaceColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -320,7 +461,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Song info header
             Row(
               children: [
                 ClipRRect(
@@ -376,7 +516,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void _showAddToPlaylistSheet(Song song, List<Playlist> playlists) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
+      backgroundColor: kSurfaceColor,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -386,10 +526,8 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              "Add \"${song.title}\" to playlist",
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            Text('Add "${song.title}" to playlist',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 16),
             if (playlists.isEmpty)
               const Padding(
@@ -402,32 +540,29 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                     shrinkWrap: true,
                     itemCount: playlists.length,
                     itemBuilder: (context, index) {
-                         final pl = playlists[index];
-                         return ListTile(
-                            leading: SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: kPrimaryColor.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.playlist_play, color: kPrimaryColor),
-                              ),
-                            ),
-                            title: Text(pl.name),
-                            subtitle: Text("${pl.songCount} songs", style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                            onTap: () async {
-                              await ApiService.addSongToPlaylist(pl.id, song.id);
-                              Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text("Added to ${pl.name}"), backgroundColor: kPrimaryColor),
-                              );
-                              if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
-                            },
+                      final pl = playlists[index];
+                      return ListTile(
+                        leading: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: kPrimaryColor.withOpacity(0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.playlist_play, color: kPrimaryColor),
+                        ),
+                        title: Text(pl.name),
+                        subtitle: Text("${pl.songCount} songs", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        onTap: () async {
+                          await ApiService.addSongToPlaylist(pl.id, song.id);
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text("Added to ${pl.name}"), backgroundColor: kPrimaryColor),
                           );
-                    }
-                ),
+                          if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
+                        },
+                      );
+                    }),
               ),
             const SizedBox(height: 16),
             Center(
@@ -449,11 +584,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void _showRenameSongDialog(Song song) {
     final titleController = TextEditingController(text: song.title);
     final artistController = TextEditingController(text: song.artist);
-    
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: kSurfaceColor,
         title: const Text("Rename Song"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -497,9 +632,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
+        backgroundColor: kSurfaceColor,
         title: const Text("Delete Song?"),
-        content: Text("Are you sure you want to delete \"${song.title}\"?"),
+        content: Text('Are you sure you want to delete "${song.title}"?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
           TextButton(

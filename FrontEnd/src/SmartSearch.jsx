@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Fuse from 'fuse.js';
+import { searchLibrary } from './api';
 
-const SmartSearch = ({ songs, onSelectSong }) => {
+const SmartSearch = ({ songs, onSelectSong, onSelectAlbum, onSelectArtist }) => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
+    const [albums, setAlbums] = useState([]);
+    const [artists, setArtists] = useState([]);
     const [isOpen, setIsOpen] = useState(false);
     const searchRef = useRef(null);
     const fuseRef = useRef(null);
+    const debounceRef = useRef(null);
 
     // Initialize Fuse
     useEffect(() => {
@@ -19,14 +23,33 @@ const SmartSearch = ({ songs, onSelectSong }) => {
         }
     }, [songs]);
 
-    // Handle Search
+    // Handle Search (songs locally, albums/artists via server)
     useEffect(() => {
         if (query.trim() && fuseRef.current) {
             const res = fuseRef.current.search(query);
-            setResults(res.slice(0, 8).map(r => r.item)); // Limit to 8
+            setResults(res.slice(0, 5).map(r => r.item)); // Limit to 5 (room for albums/artists)
         } else {
             setResults([]);
         }
+
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        if (query.trim().length >= 2) {
+            debounceRef.current = setTimeout(async () => {
+                try {
+                    const data = await searchLibrary(query.trim());
+                    setAlbums((data.albums || []).slice(0, 3));
+                    setArtists((data.artists || []).slice(0, 3));
+                } catch (err) {
+                    console.error('Search failed:', err);
+                }
+            }, 300);
+        } else {
+            setAlbums([]);
+            setArtists([]);
+        }
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+        };
     }, [query]);
 
     // Click outside to close
@@ -45,6 +68,20 @@ const SmartSearch = ({ songs, onSelectSong }) => {
         setIsOpen(false);
         setQuery('');
     };
+
+    const handleSelectAlbum = (album) => {
+        onSelectAlbum?.(album);
+        setIsOpen(false);
+        setQuery('');
+    };
+
+    const handleSelectArtist = (artist) => {
+        onSelectArtist?.(artist);
+        setIsOpen(false);
+        setQuery('');
+    };
+
+    const hasAny = results.length > 0 || albums.length > 0 || artists.length > 0;
 
     return (
         <div className="relative" ref={searchRef}>
@@ -66,32 +103,85 @@ const SmartSearch = ({ songs, onSelectSong }) => {
             </div>
 
             {/* Dropdown Results */}
-            {isOpen && query && results.length > 0 && (
-                <div className="absolute top-full mt-2 w-80 right-0 bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100] animate-scale-in origin-top-right">
+            {isOpen && query && hasAny && (
+                <div className="absolute top-full mt-2 w-80 right-0 bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-[100] animate-scale-in origin-top-right max-h-[70vh] overflow-y-auto">
                     <div className="p-2">
-                        {results.map((song) => (
-                            <div
-                                key={song.id}
-                                onClick={() => handleSelect(song)}
-                                className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 cursor-pointer transition"
-                            >
-                                <img
-                                    src={song.cover_art || song.thumbnail || 'https://via.placeholder.com/40'}
-                                    className="w-10 h-10 rounded bg-white/5 object-cover"
-                                    onError={(e) => e.target.src = 'https://via.placeholder.com/40'}
-                                />
-                                <div className="min-w-0">
-                                    <h4 className="text-sm font-medium text-white truncate">{song.title}</h4>
-                                    <p className="text-xs text-white/50 truncate">{song.artist}</p>
-                                </div>
-                            </div>
-                        ))}
+                        {artists.length > 0 && (
+                            <>
+                                <p className="text-[11px] font-bold text-white/40 uppercase tracking-wider px-2 pt-1 pb-1">Artists</p>
+                                {artists.map((artist) => (
+                                    <div
+                                        key={artist.key}
+                                        onClick={() => handleSelectArtist(artist)}
+                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 cursor-pointer transition"
+                                    >
+                                        {artist.cover_art ? (
+                                            <img src={artist.cover_art} className="w-10 h-10 rounded-full bg-white/5 object-cover" alt="" />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center">
+                                                <svg className="w-5 h-5 text-white/30" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <h4 className="text-sm font-medium text-white truncate">{artist.name}</h4>
+                                            <p className="text-xs text-white/50 truncate">{artist.song_count} songs</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                        {albums.length > 0 && (
+                            <>
+                                <p className="text-[11px] font-bold text-white/40 uppercase tracking-wider px-2 pt-1 pb-1">Albums</p>
+                                {albums.map((album) => (
+                                    <div
+                                        key={album.id}
+                                        onClick={() => handleSelectAlbum(album)}
+                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 cursor-pointer transition"
+                                    >
+                                        {album.cover_art ? (
+                                            <img src={album.cover_art} className="w-10 h-10 rounded bg-white/5 object-cover" alt="" />
+                                        ) : (
+                                            <div className="w-10 h-10 rounded bg-white/5 flex items-center justify-center">
+                                                <svg className="w-5 h-5 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" /></svg>
+                                            </div>
+                                        )}
+                                        <div className="min-w-0">
+                                            <h4 className="text-sm font-medium text-white truncate">{album.name}</h4>
+                                            <p className="text-xs text-white/50 truncate">{album.song_count} songs</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
+                        {results.length > 0 && (
+                            <>
+                                <p className="text-[11px] font-bold text-white/40 uppercase tracking-wider px-2 pt-1 pb-1">Songs</p>
+                                {results.map((song) => (
+                                    <div
+                                        key={song.id}
+                                        onClick={() => handleSelect(song)}
+                                        className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/10 cursor-pointer transition"
+                                    >
+                                        <img
+                                            src={song.cover_art || song.thumbnail || 'https://via.placeholder.com/40'}
+                                            className="w-10 h-10 rounded bg-white/5 object-cover"
+                                            onError={(e) => e.target.src = 'https://via.placeholder.com/40'}
+                                        />
+                                        <div className="min-w-0">
+                                            <h4 className="text-sm font-medium text-white truncate">{song.title}</h4>
+                                            <p className="text-xs text-white/50 truncate">{song.artist}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </>
+                        )}
                     </div>
                 </div>
             )}
 
             {/* No Results */}
-            {isOpen && query && results.length === 0 && (
+            {isOpen && query && !hasAny && (
                 <div className="absolute top-full mt-2 w-64 right-0 bg-[#0f111a]/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl p-4 text-center z-[100]">
                     <p className="text-sm text-white/50">No results found</p>
                 </div>

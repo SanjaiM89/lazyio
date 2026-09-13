@@ -7,6 +7,7 @@ import 'music_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
 import 'screens/albums_screen.dart';
+import 'screens/artists_screen.dart';
 import 'screens/upload_screen.dart';
 import 'websocket_service.dart';
 import 'widgets/mini_player.dart';
@@ -19,21 +20,20 @@ import 'screens/connection_screen.dart';
 import 'screens/settings_screen.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized(); // Required before SharedPreferences
-  
+  WidgetsFlutterBinding.ensureInitialized();
+
   await JustAudioBackground.init(
     androidNotificationChannelId: 'com.ryanheise.bg_demo.channel.audio',
     androidNotificationChannelName: 'Audio playback',
     androidNotificationOngoing: true,
   );
 
-  // Load Saved Connection
   final prefs = await SharedPreferences.getInstance();
   final ip = prefs.getString('server_ip');
   final port = prefs.getString('server_port');
-  
+
   Widget initialScreen;
-  
+
   if (ip != null && port != null && ip.isNotEmpty && port.isNotEmpty) {
     AppConfig.baseUrl = 'http://$ip:$port';
     AppConfig.wsUrl = 'ws://$ip:$port/ws';
@@ -61,18 +61,20 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'mPlay Mobile',
+      title: 'mPlay',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark().copyWith(
         scaffoldBackgroundColor: kBackgroundColor,
         primaryColor: kPrimaryColor,
         textTheme: () {
-          final base = GoogleFonts.outfitTextTheme(Theme.of(context).textTheme);
-          // Include common Tamil fonts as fallback
+          final base = GoogleFonts.outfitTextTheme(Theme.of(context).brightness == Brightness.dark
+              ? ThemeData.dark().textTheme
+              : ThemeData().textTheme);
           const fallback = ['Noto Sans Tamil', 'Latha', 'Vijaya', '.SF NS', 'Roboto'];
-          
-          TextStyle withFallback(TextStyle? style) => (style ?? const TextStyle()).copyWith(fontFamilyFallback: fallback);
-          
+
+          TextStyle withFallback(TextStyle? style) =>
+              (style ?? const TextStyle()).copyWith(fontFamilyFallback: fallback);
+
           return base.copyWith(
             displayLarge: withFallback(base.displayLarge),
             displayMedium: withFallback(base.displayMedium),
@@ -120,42 +122,30 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   late WebSocketService _wsService;
-  
-  // Pages key to force refresh on WS update
+  final ScrollController _sidebarScrollController = ScrollController();
+
   Key _libraryKey = UniqueKey();
   Key _homeKey = UniqueKey();
-
-  final List<Widget> _pages = [];
 
   @override
   void initState() {
     super.initState();
     _wsService = WebSocketService();
     _wsService.connect();
-    
-    // Listen for library updates
+
     _wsService.onLibraryUpdate = (data) {
-      print("WS Library Update Received: Refreshing views");
-      // Silent refresh via provider
       Provider.of<LibraryProvider>(context, listen: false).refreshData();
-      
-      // Still rebuild Home as it doesn't use provider yet (or does it? Home uses its own loadData. 
-      // Ideally Home should also use a provider, but for now let's keep the key for Home)
       setState(() {
         _homeKey = UniqueKey();
       });
     };
-    
-    // Check if we should restore player screen
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndRestorePlayer();
     });
-    
-    // Task updates are handled per-screen via websocket library refresh
+
     _wsService.onMessage = (msg) {
-      // Backwards compatibility - string events
       if (msg == 'library_updated' || msg == 'song_added') {
-        print("WS Update Received: Refreshing views");
         Provider.of<LibraryProvider>(context, listen: false).refreshData();
         setState(() {
           _homeKey = UniqueKey();
@@ -163,19 +153,16 @@ class _MainScreenState extends State<MainScreen> {
       }
     };
   }
-  
+
   void _checkAndRestorePlayer() {
     final musicProvider = Provider.of<MusicProvider>(context, listen: false);
-    
-    // If there's a song to restore and flag is set
+
     if (musicProvider.shouldRestorePlayer && musicProvider.currentSong != null) {
       final song = musicProvider.currentSong!;
       final startWithVideo = musicProvider.lastPlaybackMode == 1;
-      
-      // Clear the restore flag
+
       musicProvider.clearRestoreFlag();
-      
-      // Navigate to player screen
+
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => UnifiedPlayerScreen(
@@ -187,8 +174,13 @@ class _MainScreenState extends State<MainScreen> {
       );
     }
   }
-  
-  WebSocketService get wsService => _wsService;
+
+  @override
+  void dispose() {
+    _wsService.close();
+    _sidebarScrollController.dispose();
+    super.dispose();
+  }
 
   void _handleNavigation(int index, [String? query]) {
     setState(() {
@@ -196,22 +188,70 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  @override
-  void dispose() {
-    _wsService.close();
-    super.dispose();
+  Widget _buildCurrentPage() {
+    switch (_selectedIndex) {
+      case 0:
+        return HomeScreen(key: _homeKey, onNavigate: _handleNavigation);
+      case 1:
+        return const LibraryScreen();
+      case 2:
+        return const AlbumsScreen();
+      case 3:
+        return const ArtistsScreen();
+      case 4:
+        return const UploadScreen();
+      default:
+        return HomeScreen(key: _homeKey, onNavigate: _handleNavigation);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Rebuild pages when keys change
-    final pages = [
-      HomeScreen(key: _homeKey, onNavigate: _handleNavigation),
-      const LibraryScreen(), // No key needed as it handles its own state via Provider
-      const AlbumsScreen(),
-      const UploadScreen(),
-    ];
+    final isTablet = Layout.isTablet(context);
 
+    if (isTablet) {
+      return _buildTabletLayout();
+    }
+    return _buildPhoneLayout();
+  }
+
+  // iPad layout: sidebar + content + mini player
+  Widget _buildTabletLayout() {
+    return Scaffold(
+      backgroundColor: kBackgroundColor,
+      body: Row(
+        children: [
+          // Sidebar
+          _buildSidebar(),
+          // Divider
+          Container(width: 0.5, color: Colors.white12),
+          // Content
+          Expanded(
+            child: Stack(
+              children: [
+                _buildCurrentPage(),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Consumer<MusicProvider>(
+                    builder: (context, music, child) {
+                      if (music.currentSong == null) return const SizedBox.shrink();
+                      return const MiniPlayer();
+                    },
+                  ),
+                ),
+                const VideoOverlay(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Phone layout: original bottom nav
+  Widget _buildPhoneLayout() {
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -220,54 +260,217 @@ class _MainScreenState extends State<MainScreen> {
             end: Alignment.bottomCenter,
             colors: [
               kBackgroundColor,
-              Color(0xFF020617), // Darker shade
+              Color(0xFF0A0A0A),
             ],
           ),
         ),
         child: Stack(
           children: [
-            IndexedStack(
-              index: _selectedIndex,
-              children: pages,
-            ),
-            // We can put the miniplayer here, aligned to bottom
+            _buildCurrentPage(),
             Positioned(
-              left: 0, 
-              right: 0, 
-              bottom: 0, 
+              left: 0,
+              right: 0,
+              bottom: 0,
               child: Consumer<MusicProvider>(
                 builder: (context, music, child) {
-                  // Only show audio miniplayer if we have a song AND video is not maximized/playing?
-                  // Actually, let's stack them. If VideoOverlay is minimized, it sits at bottom.
-                  // If VideoOverlay is maximized, it covers everything.
-                  // If Audio is playing, we show Audio MiniPlayer.
-                  // We should probably rely on providers to handle mutual exclusion if desired.
                   if (music.currentSong == null) return const SizedBox.shrink();
-                  // Check if VideoProvider is active? 
-                  // For now, let's just show it. If VideoOverlay is on top, it covers it.
-                  return const MiniPlayer(); 
+                  return const MiniPlayer();
                 },
               ),
             ),
-            // Video Overlay sits on top of everything
             const VideoOverlay(),
           ],
         ),
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _selectedIndex,
-        onTap: (index) => setState(() => _selectedIndex = index),
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.black.withOpacity(0.5),
-        selectedItemColor: kPrimaryColor,
-        unselectedItemColor: Colors.white38,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.library_music_rounded), label: 'Library'),
-          BottomNavigationBarItem(icon: Icon(Icons.album_rounded), label: 'Albums'),
-          BottomNavigationBarItem(icon: Icon(Icons.upload_file_rounded), label: 'Upload'),
+      bottomNavigationBar: _buildBottomNav(),
+    );
+  }
+
+  // Apple Music-style sidebar
+  Widget _buildSidebar() {
+    final items = [
+      _SidebarItem(Icons.play_circle_fill, 'Listen Now', 0),
+      _SidebarItem(Icons.library_music_rounded, 'Library', 1),
+      _SidebarItem(Icons.album_rounded, 'Albums', 2),
+      _SidebarItem(Icons.person_rounded, 'Artists', 3),
+      _SidebarItem(Icons.upload_file_rounded, 'Upload to Telegram', 4),
+    ];
+
+    return Container(
+      width: 240,
+      color: kSurfaceColor,
+      child: Column(
+        children: [
+          // App name
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 48, 20, 16),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [kPrimaryColor, Color(0xFFFF6B6B)],
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'mPlay',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Navigation items
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final isSelected = _selectedIndex == item.index;
+                return _buildSidebarTile(item, isSelected);
+              },
+            ),
+          ),
+          // Settings at bottom
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: _buildSidebarTile(
+              _SidebarItem(Icons.settings_rounded, 'Settings', -1),
+              false,
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Widget _buildSidebarTile(_SidebarItem item, bool isSelected) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () {
+            if (item.index == -1) {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              );
+            } else {
+              setState(() => _selectedIndex = item.index);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? kPrimaryColor.withOpacity(0.15)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  item.icon,
+                  color: isSelected ? kPrimaryColor : Colors.white54,
+                  size: 22,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white70,
+                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                if (isSelected)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: kPrimaryColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Apple Music-style bottom nav (phone only)
+  Widget _buildBottomNav() {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFF1C1C1E),
+        border: Border(top: BorderSide(color: Colors.white12, width: 0.3)),
+      ),
+      child: SafeArea(
+        child: BottomNavigationBar(
+          currentIndex: _selectedIndex,
+          onTap: (index) => setState(() => _selectedIndex = index),
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          selectedItemColor: kPrimaryColor,
+          unselectedItemColor: Colors.white38,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
+          elevation: 0,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.play_circle_outline_rounded),
+              activeIcon: Icon(Icons.play_circle_fill),
+              label: 'Listen Now',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.library_music_outlined),
+              activeIcon: Icon(Icons.library_music_rounded),
+              label: 'Library',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.album_outlined),
+              activeIcon: Icon(Icons.album_rounded),
+              label: 'Albums',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              activeIcon: Icon(Icons.person_rounded),
+              label: 'Artists',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.upload_file_outlined),
+              activeIcon: Icon(Icons.upload_file_rounded),
+              label: 'Upload',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SidebarItem {
+  final IconData icon;
+  final String label;
+  final int index;
+
+  _SidebarItem(this.icon, this.label, this.index);
 }

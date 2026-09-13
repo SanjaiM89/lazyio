@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../api_service.dart';
-import '../widgets/glass_container.dart';
 import '../constants.dart';
 
 class UploadScreen extends StatefulWidget {
@@ -45,12 +44,12 @@ class _UploadScreenState extends State<UploadScreen> {
     try {
       final paths = _files.map((f) => f.path!).toList();
       await ApiService.uploadFiles(paths);
-      
+
       setState(() {
         _statusMessage = "Upload Complete!";
         _files = [];
       });
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Upload Successful'), backgroundColor: Colors.green),
       );
@@ -62,30 +61,40 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   void _removeFile(PlatformFile file) {
-    setState(() {
-      _files.remove(file);
-    });
+    setState(() => _files.remove(file));
   }
 
   @override
   Widget build(BuildContext context) {
+    final pad = Layout.horizontalPadding(context);
+    final topPad = Layout.topPadding(context);
+    final isTablet = Layout.isTablet(context);
+
     return Scaffold(
+      backgroundColor: kBackgroundColor,
       body: Container(
-        padding: const EdgeInsets.fromLTRB(16, 60, 16, 16),
+        padding: EdgeInsets.fromLTRB(pad, topPad, pad, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Upload to Telegram", style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+            Text(
+              "Upload to Telegram",
+              style: TextStyle(fontSize: isTablet ? 38 : 28, fontWeight: FontWeight.w800, letterSpacing: -1),
+            ),
             const SizedBox(height: 8),
             const Text("Files go straight to your Telegram channel library", style: TextStyle(color: Colors.white54)),
             const SizedBox(height: 32),
-            
+
             // Upload Area
             GestureDetector(
               onTap: _uploading ? null : _pickFiles,
-              child: GlassContainer(
+              child: Container(
                 height: 200,
-                padding: const EdgeInsets.all(0),
+                decoration: BoxDecoration(
+                  color: kSurfaceColor,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
                 child: Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -106,14 +115,17 @@ class _UploadScreenState extends State<UploadScreen> {
                 ),
               ),
             ),
-            
+
             if (_statusMessage != null) ...[
-               const SizedBox(height: 16),
-               Center(child: Text(_statusMessage!, style: TextStyle(color: _statusMessage!.startsWith("Error") ? Colors.red : Colors.green))),
+              const SizedBox(height: 16),
+              Center(
+                child: Text(_statusMessage!,
+                    style: TextStyle(color: _statusMessage!.startsWith("Error") ? Colors.red : Colors.green)),
+              ),
             ],
 
             const SizedBox(height: 24),
-            
+
             // File List
             if (_files.isNotEmpty) ...[
               const Text("Selected Files", style: TextStyle(fontWeight: FontWeight.bold)),
@@ -126,13 +138,14 @@ class _UploadScreenState extends State<UploadScreen> {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.05),
+                        color: kSurfaceColor,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: ListTile(
                         leading: const Icon(Icons.audio_file, color: Colors.white54),
                         title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text("${(file.size / 1024 / 1024).toStringAsFixed(2)} MB", style: const TextStyle(fontSize: 12, color: Colors.white38)),
+                        subtitle: Text("${(file.size / 1024 / 1024).toStringAsFixed(2)} MB",
+                            style: const TextStyle(fontSize: 12, color: Colors.white38)),
                         trailing: IconButton(
                           icon: const Icon(Icons.close, color: Colors.white38),
                           onPressed: () => _removeFile(file),
@@ -142,9 +155,9 @@ class _UploadScreenState extends State<UploadScreen> {
                   },
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               SizedBox(
                 width: double.infinity,
                 height: 50,
@@ -154,12 +167,12 @@ class _UploadScreenState extends State<UploadScreen> {
                     backgroundColor: kPrimaryColor,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: _uploading 
+                  child: _uploading
                       ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
                       : const Text("Start Upload", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
               ),
-              const SizedBox(height: 80), // Padding for nav bar
+              const SizedBox(height: 80),
             ],
           ],
         ),

@@ -4,21 +4,19 @@ import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
 import '../constants.dart';
-import 'album_detail_screen.dart';
+import 'artist_detail_screen.dart';
 
-class AlbumsScreen extends StatefulWidget {
-  const AlbumsScreen({super.key});
+class ArtistsScreen extends StatefulWidget {
+  const ArtistsScreen({super.key});
 
   @override
-  State<AlbumsScreen> createState() => _AlbumsScreenState();
+  State<ArtistsScreen> createState() => _ArtistsScreenState();
 }
 
-class _AlbumsScreenState extends State<AlbumsScreen> {
-  List<Album> _albums = [];
-  Album? _selected;
+class _ArtistsScreenState extends State<ArtistsScreen> {
+  List<Artist> _artists = [];
   bool _loading = true;
   bool _loadingMore = false;
-  bool _scanning = false;
   int _page = 1;
   int _pages = 1;
   int _total = 0;
@@ -29,7 +27,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _loadAlbums(page: 1);
+    _loadArtists(page: 1);
   }
 
   @override
@@ -43,35 +41,35 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     final pos = _scrollController.position;
     if (pos.pixels >= pos.maxScrollExtent - 400) {
       if (!_loading && !_loadingMore && _page < _pages) {
-        _loadAlbums(page: _page + 1, append: true);
+        _loadArtists(page: _page + 1, append: true);
       }
     }
   }
 
-  Future<void> _loadAlbums({required int page, bool append = false}) async {
+  Future<void> _loadArtists({required int page, bool append = false}) async {
     if (append) {
       setState(() => _loadingMore = true);
     } else {
       setState(() => _loading = true);
     }
     try {
-      final data = await ApiService.getAlbumsPaged(page: page, limit: _pageSize);
-      final List<dynamic> raw = data['albums'] ?? [];
-      final list = raw.map((j) => Album.fromJson(j as Map<String, dynamic>)).toList();
+      final data = await ApiService.getArtistsPaged(page: page, limit: _pageSize);
+      final List<dynamic> raw = data['artists'] ?? [];
+      final list = raw.map((j) => Artist.fromJson(j as Map<String, dynamic>)).toList();
       if (mounted) {
         setState(() {
           if (append) {
-            _albums.addAll(list);
+            _artists.addAll(list);
           } else {
-            _albums = list;
+            _artists = list;
           }
           _page = (data['page'] ?? page) as int;
           _pages = (data['pages'] ?? 1) as int;
-          _total = (data['total'] ?? _albums.length) as int;
+          _total = (data['total'] ?? _artists.length) as int;
         });
       }
     } catch (e) {
-      debugPrint('Error loading albums: $e');
+      debugPrint('Error loading artists: $e');
     }
     if (mounted) setState(() {
       _loading = false;
@@ -79,49 +77,15 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     });
   }
 
-  Future<void> _openAlbum(Album album) async {
-    setState(() => _loading = true);
-    try {
-      final full = await ApiService.getAlbum(album.id);
-      if (mounted) setState(() => _selected = full ?? album);
-    } catch (e) {
-      debugPrint('Error opening album: $e');
-    }
-    if (mounted) setState(() => _loading = false);
-  }
-
-  Future<void> _rescan() async {
-    setState(() => _scanning = true);
-    try {
-      await ApiService.scanTelegramChannel();
-      await _loadAlbums(page: 1);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Telegram channel rescanned')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Rescan failed: $e'), backgroundColor: Colors.red),
-        );
-      }
-    }
-    if (mounted) setState(() => _scanning = false);
+  void _openArtist(Artist artist) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ArtistDetailScreen(artistName: artist.name)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_selected != null) {
-      return Scaffold(
-        backgroundColor: kBackgroundColor,
-        body: AlbumDetailView(
-          album: _selected!,
-          onBack: () => setState(() => _selected = null),
-        ),
-      );
-    }
-
     final pad = Layout.horizontalPadding(context);
     final topPad = Layout.topPadding(context);
     final cols = Layout.gridColumns(context);
@@ -133,29 +97,20 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
         children: [
           Padding(
             padding: EdgeInsets.fromLTRB(pad, topPad, pad, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Albums',
-                      style: TextStyle(
-                        fontSize: isTablet(context) ? 38 : 32,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
-                      ),
-                    ),
-                    Text(
-                      _total > 0 ? '$_total albums' : 'From Telegram channel',
-                      style: const TextStyle(color: Colors.white54),
-                    ),
-                  ],
+                Text(
+                  'Artists',
+                  style: TextStyle(
+                    fontSize: Layout.isTablet(context) ? 38 : 32,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -1,
+                  ),
                 ),
-                TextButton(
-                  onPressed: _scanning ? null : _rescan,
-                  child: Text(_scanning ? 'Scanning...' : 'Rescan', style: const TextStyle(color: kPrimaryColor)),
+                Text(
+                  _total > 0 ? '$_total artists' : 'From your Telegram channel',
+                  style: const TextStyle(color: Colors.white54),
                 ),
               ],
             ),
@@ -163,9 +118,9 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
           Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
-                : _albums.isEmpty
+                : _artists.isEmpty
                     ? const Center(
-                        child: Text('No albums yet.\nAdd music to the Telegram channel, then rescan.',
+                        child: Text('No artists yet.\nAdd music to the Telegram channel, then rescan.',
                             textAlign: TextAlign.center, style: TextStyle(color: Colors.white54)),
                       )
                     : GridView.builder(
@@ -175,11 +130,11 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                           crossAxisCount: cols,
                           crossAxisSpacing: 12,
                           mainAxisSpacing: 12,
-                          childAspectRatio: 0.85,
+                          childAspectRatio: 0.88,
                         ),
-                        itemCount: _albums.length + (_loadingMore ? 1 : 0),
+                        itemCount: _artists.length + (_loadingMore ? 1 : 0),
                         itemBuilder: (context, i) {
-                          if (i >= _albums.length) {
+                          if (i >= _artists.length) {
                             return const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(24),
@@ -187,9 +142,9 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                               ),
                             );
                           }
-                          final album = _albums[i];
+                          final artist = _artists[i];
                           return GestureDetector(
-                            onTap: () => _openAlbum(album),
+                            onTap: () => _openArtist(artist),
                             child: Container(
                               decoration: BoxDecoration(
                                 color: kSurfaceColor,
@@ -197,26 +152,25 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
                               ),
                               padding: const EdgeInsets.all(10),
                               child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Expanded(
                                     child: Container(
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
+                                        shape: BoxShape.circle,
                                         color: Colors.white10,
-                                        image: album.coverArt != null
-                                            ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
+                                        image: artist.coverArt != null
+                                            ? DecorationImage(image: NetworkImage(artist.coverArt!), fit: BoxFit.cover)
                                             : null,
                                       ),
-                                      child: album.coverArt == null
-                                          ? const Center(child: Icon(Icons.album, size: 40, color: Colors.white24))
+                                      child: artist.coverArt == null
+                                          ? const Center(child: Icon(Icons.person, size: 40, color: Colors.white24))
                                           : null,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
-                                  Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  Text(artist.name, maxLines: 1, overflow: TextOverflow.ellipsis,
                                       style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  Text('${album.songCount} songs', style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                                  Text('${artist.songCount} songs', style: const TextStyle(color: Colors.white54, fontSize: 12)),
                                 ],
                               ),
                             ),
@@ -228,6 +182,4 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
       ),
     );
   }
-
-  bool isTablet(BuildContext context) => Layout.isTablet(context);
 }

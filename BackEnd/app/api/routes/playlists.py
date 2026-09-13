@@ -48,6 +48,16 @@ async def api_add_song_to_playlist(playlist_id: str, song_id: str):
     return {"status": "success"}
 
 
+@router.post("/{playlist_id}/songs")
+async def api_add_song_to_playlist_query(playlist_id: str, song_id: str):
+    """Query-param variant used by the web + Flutter clients."""
+    success = await add_song_to_playlist(playlist_id, song_id)
+    if not success:
+        raise HTTPException(status_code=400, detail="Could not add song")
+    await notify_update("library_updated")
+    return {"status": "success"}
+
+
 @router.delete("/{playlist_id}/songs/{song_id}")
 async def api_remove_song_from_playlist(playlist_id: str, song_id: str):
     success = await remove_song_from_playlist(playlist_id, song_id)

@@ -19,6 +19,8 @@ from app.api.routes.playlists import router as playlists_router
 from app.api.routes.recommend import router as recommend_router
 from app.api.routes.telegram import router as telegram_router
 from app.api.routes.albums import router as albums_router
+from app.api.routes.artists import router as artists_router
+from app.api.routes.search import router as search_router
 
 
 async def refresh_ai_recommendations():
@@ -117,6 +119,8 @@ app.include_router(songs_router)
 app.include_router(playlists_router)
 app.include_router(telegram_router)
 app.include_router(albums_router)
+app.include_router(artists_router)
+app.include_router(search_router)
 app.include_router(recommend_router)
 
 

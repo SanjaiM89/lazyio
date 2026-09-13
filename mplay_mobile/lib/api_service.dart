@@ -33,15 +33,19 @@ class ApiService {
   // Albums (grouped Telegram library)
 
   static Future<List<Album>> getAlbums({int page = 1, int limit = 20}) async {
+    final data = await getAlbumsPaged(page: page, limit: limit);
+    final List<dynamic> albums = data['albums'] ?? [];
+    return albums.map((j) => Album.fromJson(j)).toList();
+  }
+
+  static Future<Map<String, dynamic>> getAlbumsPaged({int page = 1, int limit = 20}) async {
     final response = await http.get(
       Uri.parse('${AppConfig.baseUrl}/api/albums?page=$page&limit=$limit'),
     );
     if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final List<dynamic> albums = data['albums'] ?? [];
-      return albums.map((j) => Album.fromJson(j)).toList();
+      return json.decode(response.body);
     }
-    return [];
+    return {'albums': [], 'page': page, 'pages': 1, 'total': 0};
   }
 
   static Future<Album?> getAlbum(String albumId) async {
@@ -58,6 +62,50 @@ class ApiService {
     );
     if (response.statusCode == 200) {
       return json.decode(response.body);
+    }
+    return null;
+  }
+
+  // Unified search (songs + albums + artists)
+  static Future<Map<String, dynamic>> searchLibrary(String query) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/search?q=${Uri.encodeQueryComponent(query)}'),
+    );
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    return {'songs': [], 'albums': [], 'artists': []};
+  }
+
+  // Artists
+  static Future<List<Artist>> getArtists({int page = 1, int limit = 20, String query = ''}) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/artists?page=$page&limit=$limit&query=${Uri.encodeQueryComponent(query)}'),
+    );
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> artists = data['artists'] ?? [];
+      return artists.map((j) => Artist.fromJson(j)).toList();
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>> getArtistsPaged({int page = 1, int limit = 20}) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/artists?page=$page&limit=$limit'),
+    );
+    if (response.statusCode == 200) {
+      return json.decode(response.body);
+    }
+    return {'artists': [], 'page': page, 'pages': 1, 'total': 0};
+  }
+
+  static Future<Artist?> getArtist(String name) async {
+    final response = await http.get(
+      Uri.parse('${AppConfig.baseUrl}/api/artists/${Uri.encodeComponent(name)}'),
+    );
+    if (response.statusCode == 200) {
+      return Artist.fromJson(json.decode(response.body));
     }
     return null;
   }

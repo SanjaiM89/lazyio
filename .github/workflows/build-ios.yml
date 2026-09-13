@@ -1,0 +1,69 @@
+name: Build iOS (iPad)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build mode'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - profile
+
+env:
+  FLUTTER_VERSION: '3.24.x'
+  PROJECT_PATH: mplay_mobile
+
+jobs:
+  build-ios:
+    name: Build iOS IPA
+    runs-on: macos-14  # Apple Silicon runner (M1)
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter Doctor
+        run: flutter doctor -v
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_PATH }}
+        run: flutter pub get
+
+      - name: Build IPA
+        working-directory: ${{ env.PROJECT_PATH }}
+        run: |
+          flutter build ipa \
+            --release \
+            --export-options-plist=ios/ExportOptions.plist \
+            || flutter build ipa --release --no-codesign
+        env:
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mplay-ipa-${{ github.run_number }}
+          path: ${{ env.PROJECT_PATH }}/build/ios/ipa/*.ipa
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          echo "## iOS Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the IPA from the Artifacts section below" >> $GITHUB_STEP_SUMMARY
+          echo "2. Install via [AltStore](https://altstore.io/) or [Sideloadly](https://sideloadly.io/)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Or upload to TestFlight for TestFlight distribution" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**For TestFlight:** Run the workflow with code signing secrets configured." >> $GITHUB_STEP_SUMMARY

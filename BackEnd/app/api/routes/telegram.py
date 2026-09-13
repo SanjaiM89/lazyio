@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException
 from app.db.connection import telegram_state_collection
 from app.services.telegram import telegram_client, TelegramNotConfigured
 from app.services.channel_indexer import scan_source_channel
+from app.services.artwork import debug_match, TransientStoreError
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
 
@@ -34,3 +35,16 @@ async def telegram_scan(limit: int = 0, force: bool = False):
     except Exception:
         pass
     return {"status": "success", **result}
+
+
+@router.get("/test-match")
+async def telegram_test_match(title: str, artist: str = ""):
+    """Diagnostics: why does (or doesn't) a song get store metadata?
+
+    Shows every query tried plus each raw iTunes candidate with its
+    accept/reject reason. Nothing is cached or written.
+    """
+    try:
+        return await debug_match(title, artist)
+    except TransientStoreError as e:
+        raise HTTPException(status_code=502, detail=f"Store unreachable: {e}")

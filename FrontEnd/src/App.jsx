@@ -3,6 +3,7 @@ import { getSongs, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
 import Player from './Player';
 import Upload from './Upload';
 import Albums from './Albums';
+import Artists from './Artists';
 import Home from './Home';
 import Playlists from './Playlists';
 import AddToPlaylistModal from './AddToPlaylistModal';
@@ -22,6 +23,21 @@ function App() {
   // Playlist Modal State
   const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
   const [songForPlaylist, setSongForPlaylist] = useState(null);
+  const [songsForPlaylist, setSongsForPlaylist] = useState(null);
+
+  // Search-driven focus: open a specific album/artist from SmartSearch
+  const [focusAlbumId, setFocusAlbumId] = useState(null);
+  const [focusArtistName, setFocusArtistName] = useState(null);
+
+  const handleSelectAlbum = (album) => {
+    setFocusAlbumId(album.id);
+    setView('albums');
+  };
+
+  const handleSelectArtist = (artist) => {
+    setFocusArtistName(artist.name);
+    setView('artists');
+  };
 
   useEffect(() => {
     loadSongs();
@@ -87,6 +103,15 @@ function App() {
   // Open Playlist Modal
   const handleAddToPlaylist = (song) => {
     setSongForPlaylist(song);
+    setSongsForPlaylist(null);
+    setPlaylistModalOpen(true);
+  };
+
+  // Open Playlist Modal for a whole album (list of song ids)
+  const handleAddAlbumToPlaylist = (songIds) => {
+    if (!songIds || songIds.length === 0) return;
+    setSongForPlaylist(null);
+    setSongsForPlaylist(songIds);
     setPlaylistModalOpen(true);
   };
 
@@ -118,6 +143,7 @@ function App() {
     { id: 'nowplaying', label: 'Now Playing' },
     { id: 'playlist', label: 'Library' }, // Keeping ID 'playlist' for Library view legacy, but label is Library
     { id: 'albums', label: 'Albums' },
+    { id: 'artists', label: 'Artists' },
     { id: 'playlists', label: 'Playlists' }, // New Playlists view
     { id: 'upload', label: 'Upload' },
   ];
@@ -154,7 +180,12 @@ function App() {
         </div>
 
         <div className="flex items-center gap-6">
-          <SmartSearch songs={songs} onSelectSong={handlePlaySong} />
+          <SmartSearch
+            songs={songs}
+            onSelectSong={handlePlaySong}
+            onSelectAlbum={handleSelectAlbum}
+            onSelectArtist={handleSelectArtist}
+          />
 
           <div
             className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center cursor-pointer hover:opacity-90 transition shadow-lg shadow-pink-500/20"
@@ -177,7 +208,22 @@ function App() {
             onOpenPlaylistModal={handleAddToPlaylist}
           />
         )}
-        {view === 'albums' && <Albums onPlaySong={handlePlaySong} />}
+        {view === 'albums' && (
+          <Albums
+            onPlaySong={handlePlaySong}
+            onAddAlbumToPlaylist={handleAddAlbumToPlaylist}
+            focusAlbumId={focusAlbumId}
+            onClearFocus={() => setFocusAlbumId(null)}
+          />
+        )}
+        {view === 'artists' && (
+          <Artists
+            onPlaySong={handlePlaySong}
+            onSelectAlbum={handleSelectAlbum}
+            focusArtistName={focusArtistName}
+            onClearFocus={() => setFocusArtistName(null)}
+          />
+        )}
         {view === 'upload' && <Upload onUploadComplete={handleUploadComplete} />}
         {view === 'playlists' && <Playlists onPlaySong={handlePlaySong} onNavigate={handleNavigate} onOpenPlaylistModal={handleAddToPlaylist} />}
 
@@ -269,6 +315,7 @@ function App() {
         onSelectSong={handlePlaySong}
         fullView={view === 'nowplaying'}
         onToggleView={() => setView(v => v === 'nowplaying' ? 'home' : 'nowplaying')}
+        onOpenPlaylistModal={handleAddToPlaylist}
       />
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
@@ -277,6 +324,7 @@ function App() {
         isOpen={playlistModalOpen}
         onClose={() => setPlaylistModalOpen(false)}
         song={songForPlaylist}
+        songIds={songsForPlaylist}
       />
     </div>
   );

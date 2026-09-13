@@ -1,10 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../music_provider.dart';
-import '../constants.dart';
 import '../api_service.dart';
 import '../models.dart';
+import '../music_provider.dart';
+import '../constants.dart';
 
 class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
@@ -20,7 +20,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    // Delay to ensure context is available
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadLikeStatus();
     });
@@ -37,9 +36,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> _fetchLikeStatus(String songId) async {
     try {
-      print("Fetching like status for: $songId");
       final status = await ApiService.getLikeStatus(songId);
-      print("Like status result: $status");
       if (mounted) setState(() => _likeStatus = status);
     } catch (e) {
       print("Error fetching like status: $e");
@@ -49,7 +46,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _toggleLike() async {
     if (_currentSongId == null) return;
     try {
-      print("Toggle like for: $_currentSongId, current status: $_likeStatus");
       if (_likeStatus == true) {
         await ApiService.dislikeSong(_currentSongId!);
         setState(() => _likeStatus = false);
@@ -57,7 +53,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
         await ApiService.likeSong(_currentSongId!);
         setState(() => _likeStatus = true);
       }
-      print("Like toggled, new status: $_likeStatus");
     } catch (e) {
       print("Error toggling like: $e");
     }
@@ -66,7 +61,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Future<void> _toggleDislike() async {
     if (_currentSongId == null) return;
     try {
-      print("Toggle dislike for: $_currentSongId");
       if (_likeStatus == false) {
         await ApiService.likeSong(_currentSongId!);
         setState(() => _likeStatus = true);
@@ -79,232 +73,18 @@ class _PlayerScreenState extends State<PlayerScreen> {
     }
   }
 
-  void _showUpcomingQueue() async {
-    if (_currentSongId == null) return;
-    
-    // Show loading sheet
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => _UpcomingQueueSheet(
-        songId: _currentSongId!,
-        onSongTap: (song) async {
-          Navigator.pop(ctx);
-          final music = Provider.of<MusicProvider>(context, listen: false);
-          // Fetch current playlist from API
-          final songs = await ApiService.getSongs();
-          music.playSong(song, songs);
-        },
-      ),
-    );
-  }
-
-  void _showSongOptionsMenu(BuildContext context, Song song) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Song info header
-            Row(
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: song.coverArt != null
-                      ? Image.network(song.coverArt!, width: 50, height: 50, fit: BoxFit.cover)
-                      : Container(width: 50, height: 50, color: Colors.white10),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(song.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 13)),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            const Divider(color: Colors.white12),
-            ListTile(
-              leading: const Icon(Icons.playlist_add, color: kPrimaryColor),
-              title: const Text("Add to Playlist"),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showAddToPlaylistDialog(context, song);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit, color: Colors.blue),
-              title: const Text("Rename Song"),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showRenameSongDialog(context, song);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text("Delete Song"),
-              onTap: () {
-                Navigator.pop(ctx);
-                _showDeleteConfirmation(context, song);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAddToPlaylistDialog(BuildContext context, Song song) async {
-    final playlists = await ApiService.getPlaylists();
-    
-    if (!context.mounted) return;
-    
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1a1a2e),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text("Add \"${song.title}\" to playlist", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            if (playlists.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(20),
-                child: Text("No playlists yet. Create one in Library!", style: TextStyle(color: Colors.white54)),
-              )
-            else
-              ...(playlists.map((pl) => ListTile(
-                leading: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: kPrimaryColor.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.playlist_play, color: kPrimaryColor),
-                  ),
-                ),
-                title: Text(pl['name'] ?? 'Untitled'),
-                subtitle: Text("${(pl['songs'] as List?)?.length ?? 0} songs", style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                onTap: () async {
-                  await ApiService.addSongToPlaylist(pl['id'], song.id);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Added to ${pl['name']}"), backgroundColor: kPrimaryColor),
-                    );
-                  }
-                },
-              ))),
-            const SizedBox(height: 16),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showRenameSongDialog(BuildContext context, Song song) {
-    final titleController = TextEditingController(text: song.title);
-    final artistController = TextEditingController(text: song.artist);
-    
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text("Rename Song"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: titleController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: "Title", labelStyle: TextStyle(color: Colors.white54)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: artistController,
-              style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: "Artist", labelStyle: TextStyle(color: Colors.white54)),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () async {
-              await ApiService.updateSong(
-                song.id,
-                title: titleController.text.trim(),
-                artist: artistController.text.trim(),
-              );
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Song updated"), backgroundColor: Colors.green),
-                );
-              }
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(BuildContext context, Song song) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1a1a2e),
-        title: const Text("Delete Song?"),
-        content: Text("Are you sure you want to delete \"${song.title}\"?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
-          TextButton(
-            onPressed: () async {
-              await ApiService.deleteSong(song.id);
-              if (ctx.mounted) Navigator.pop(ctx);
-              if (context.mounted) {
-                Navigator.pop(context); // Close player
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Song deleted"), backgroundColor: Colors.red),
-                );
-              }
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
+  String _formatDuration(Duration d) {
+    final min = d.inMinutes;
+    final sec = d.inSeconds % 60;
+    return '$min:${sec.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
     final music = Provider.of<MusicProvider>(context);
     final song = music.currentSong;
+    final isTablet = Layout.isTablet(context);
 
-    // Check if song changed
     if (song != null && song.id != _currentSongId) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _currentSongId = song.id;
@@ -327,13 +107,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.more_horiz_rounded),
-            onPressed: () => _showSongOptionsMenu(context, song),
+            onPressed: () {},
           ),
         ],
       ),
       body: Stack(
         children: [
-          // Blurred background from album art
+          // Blurred background
           if (song.coverArt != null)
             Positioned.fill(
               child: ImageFiltered(
@@ -346,8 +126,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                 ),
               ),
             ),
-          
-          // Gradient overlay for readability
+          // Gradient
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -364,16 +143,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
               ),
             ),
           ),
-            
           // Content
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              padding: EdgeInsets.symmetric(horizontal: isTablet ? 64 : 32),
               child: Column(
                 children: [
                   const SizedBox(height: 40),
-                  
-                  // Cover Art - Large and prominent
+                  // Cover Art
                   Expanded(
                     flex: 4,
                     child: AspectRatio(
@@ -392,70 +169,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(12),
                           child: song.coverArt != null && song.coverArt!.isNotEmpty
-                              ? Image.network(
-                                  song.coverArt!,
-                                  fit: BoxFit.cover,
-                                  loadingBuilder: (context, child, loadingProgress) {
-                                    if (loadingProgress == null) return child;
-                                    return Container(
-                                      color: Colors.white10,
-                                      child: const Center(child: CircularProgressIndicator(color: kPrimaryColor)),
-                                    );
-                                  },
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Container(
-                                      color: Colors.white10,
-                                      child: const Icon(Icons.music_note, size: 80, color: Colors.white24),
-                                    );
-                                  },
-                                )
-                              : Container(
-                                  color: Colors.white10,
-                                  child: const Icon(Icons.music_note, size: 80, color: Colors.white24),
-                                ),
+                              ? Image.network(song.coverArt!, fit: BoxFit.cover)
+                              : Container(color: Colors.white10, child: const Icon(Icons.music_note, size: 80, color: Colors.white24)),
                         ),
                       ),
                     ),
                   ),
-                  
                   const SizedBox(height: 32),
-                  
-                  // Title / Artist - Apple style with marquee-like styling
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          song.title,
-                          style: const TextStyle(
-                            fontSize: 22, 
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.5,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          song.artist,
-                          style: TextStyle(
-                            fontSize: 16, 
-                            color: kPrimaryColor.withOpacity(0.9),
-                            fontWeight: FontWeight.w500,
-                          ),
-                          textAlign: TextAlign.center,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
+                  // Title / Artist
+                  Text(
+                    song.title,
+                    style: TextStyle(fontSize: isTablet ? 26 : 22, fontWeight: FontWeight.w600, letterSpacing: -0.5),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  
+                  const SizedBox(height: 4),
+                  Text(
+                    song.artist,
+                    style: TextStyle(fontSize: isTablet ? 18 : 16, color: kPrimaryColor, fontWeight: FontWeight.w500),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 16),
-                  
-                  // Progress Bar - Thinner, Apple style
+                  // Progress
                   Expanded(
                     flex: 2,
                     child: Column(
@@ -481,95 +219,54 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                _formatDuration(music.position), 
-                                style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w500),
-                              ),
-                              Text(
-                                "-${_formatDuration(music.duration - music.position)}", 
-                                style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w500),
-                              ),
+                              Text(_formatDuration(music.position), style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w500)),
+                              Text("-${_formatDuration(music.duration - music.position)}", style: const TextStyle(fontSize: 11, color: Colors.white54, fontWeight: FontWeight.w500)),
                             ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
-                  // Controls - Large, Apple style
+                  // Controls
                   Expanded(
                     flex: 2,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.skip_previous_rounded),
-                          iconSize: 48,
-                          onPressed: () => music.previous(),
-                          color: Colors.white,
-                        ),
+                        IconButton(icon: const Icon(Icons.skip_previous_rounded), iconSize: 48, onPressed: () => music.previous(), color: Colors.white),
                         Container(
-                          width: 72, 
-                          height: 72,
+                          width: isTablet ? 80 : 72,
+                          height: isTablet ? 80 : 72,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.white,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.white.withOpacity(0.3),
-                                blurRadius: 20,
-                              ),
-                            ],
+                            boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.3), blurRadius: 20)],
                           ),
                           child: IconButton(
-                            icon: Icon(
-                              music.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            ),
-                            iconSize: 40,
-                            onPressed: () {
-                              if (music.isPlaying) music.pause(); else music.resume();
-                            },
+                            icon: Icon(music.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                            iconSize: isTablet ? 44 : 40,
+                            onPressed: () { if (music.isPlaying) music.pause(); else music.resume(); },
                             color: Colors.black,
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.skip_next_rounded),
-                          iconSize: 48,
-                          onPressed: () => music.next(),
-                          color: Colors.white,
-                        ),
+                        IconButton(icon: const Icon(Icons.skip_next_rounded), iconSize: 48, onPressed: () => music.next(), color: Colors.white),
                       ],
                     ),
                   ),
-                  
-                  // Bottom actions - Like/Dislike buttons
+                  // Bottom actions
                   Expanded(
                     flex: 1,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         IconButton(
-                          icon: Icon(
-                            _likeStatus == false ? Icons.thumb_down : Icons.thumb_down_outlined,
-                            color: _likeStatus == false ? Colors.red : Colors.white54,
-                          ),
+                          icon: Icon(_likeStatus == false ? Icons.thumb_down : Icons.thumb_down_outlined, color: _likeStatus == false ? Colors.red : Colors.white54),
                           onPressed: _toggleDislike,
                         ),
+                        IconButton(icon: const Icon(Icons.speaker_rounded), onPressed: () {}, color: Colors.white54),
+                        IconButton(icon: const Icon(Icons.playlist_play_rounded), onPressed: () {}, color: Colors.white54),
                         IconButton(
-                          icon: const Icon(Icons.speaker_rounded),
-                          onPressed: () {},
-                          color: Colors.white54,
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.playlist_play_rounded),
-                          onPressed: _showUpcomingQueue,
-                          color: Colors.white54,
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            _likeStatus == true ? Icons.thumb_up : Icons.thumb_up_outlined,
-                            color: _likeStatus == true ? kPrimaryColor : Colors.white54,
-                          ),
+                          icon: Icon(_likeStatus == true ? Icons.thumb_up : Icons.thumb_up_outlined, color: _likeStatus == true ? kPrimaryColor : Colors.white54),
                           onPressed: _toggleLike,
                         ),
                       ],
@@ -581,219 +278,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  String _formatDuration(Duration d) {
-    final min = d.inMinutes;
-    final sec = d.inSeconds % 60;
-    return '${min}:${sec.toString().padLeft(2, '0')}';
-  }
-}
-
-
-/// Bottom sheet widget for upcoming queue
-class _UpcomingQueueSheet extends StatefulWidget {
-  final String songId;
-  final Function(Song) onSongTap;
-
-  const _UpcomingQueueSheet({
-    required this.songId,
-    required this.onSongTap,
-  });
-
-  @override
-  State<_UpcomingQueueSheet> createState() => _UpcomingQueueSheetState();
-}
-
-class _UpcomingQueueSheetState extends State<_UpcomingQueueSheet> {
-  List<Song> _queue = [];
-  List<String> _suggestions = [];
-  bool _loading = true;
-  bool _refreshing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadQueue();
-  }
-
-  Future<void> _loadQueue() async {
-    try {
-      // Use persistent AI queue from MongoDB
-      final songs = await ApiService.getAIQueue();
-      if (mounted) {
-        setState(() {
-          _queue = songs;
-          _loading = false;
-        });
-      }
-    } catch (e) {
-      print("Error loading queue: $e");
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _refreshQueue() async {
-    if (_refreshing) return;
-    setState(() => _refreshing = true);
-    
-    try {
-      final songs = await ApiService.refreshAIQueue();
-      if (mounted) {
-        setState(() {
-          _queue = songs;
-          _refreshing = false;
-        });
-      }
-    } catch (e) {
-      print("Error refreshing queue: $e");
-      if (mounted) setState(() => _refreshing = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.3,
-      maxChildSize: 0.9,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle bar
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              
-              // Title with refresh button
-              Row(
-                children: [
-                  const Icon(Icons.auto_awesome, color: kPrimaryColor, size: 20),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      "AI Generated Queue",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                  // Refresh button
-                  IconButton(
-                    onPressed: _refreshing ? null : _refreshQueue,
-                    icon: _refreshing
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: kPrimaryColor,
-                            ),
-                          )
-                        : const Icon(Icons.refresh, color: kPrimaryColor),
-                    tooltip: "Refresh queue with AI",
-                  ),
-                ],
-              ),
-              
-              const SizedBox(height: 4),
-              Text(
-                "Queue saves automatically • ${_queue.length} songs",
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              
-              const SizedBox(height: 12),
-              const Divider(color: Colors.white12),
-
-              
-              // Queue list
-              Expanded(
-                child: _loading
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            CircularProgressIndicator(color: kPrimaryColor),
-                            SizedBox(height: 16),
-                            Text("AI is thinking...", style: TextStyle(color: Colors.white54)),
-                          ],
-                        ),
-                      )
-                    : _queue.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.library_music, color: Colors.white24, size: 48),
-                                const SizedBox(height: 16),
-                                const Text("No songs in queue", style: TextStyle(color: Colors.white54)),
-                                if (_suggestions.isNotEmpty) ...[
-                                  const SizedBox(height: 16),
-                                  const Text("AI suggests:", style: TextStyle(color: kPrimaryColor)),
-                                  ..._suggestions.take(3).map((s) => Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(s, style: const TextStyle(color: Colors.white38, fontSize: 12)),
-                                  )),
-                                ],
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            controller: scrollController,
-                            itemCount: _queue.length,
-                            itemBuilder: (context, index) {
-                              final song = _queue[index];
-                              return ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: ClipRRect(
-                                  borderRadius: BorderRadius.circular(4),
-                                  child: Container(
-                                    width: 50,
-                                    height: 50,
-                                    color: Colors.white12,
-                                    child: song.coverArt != null
-                                        ? Image.network(song.coverArt!, fit: BoxFit.cover)
-                                        : const Icon(Icons.music_note, color: Colors.white24),
-                                  ),
-                                ),
-                                title: Text(
-                                  song.title,
-                                  style: const TextStyle(color: Colors.white),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                subtitle: Text(
-                                  song.artist,
-                                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                                ),
-                                trailing: Text(
-                                  "${(song.duration / 60).floor()}:${(song.duration.toInt() % 60).toString().padLeft(2, '0')}",
-                                  style: const TextStyle(color: Colors.white38),
-                                ),
-                                onTap: () => widget.onSongTap(song),
-                              );
-                            },
-                          ),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

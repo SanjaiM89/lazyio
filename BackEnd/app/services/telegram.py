@@ -170,11 +170,18 @@ class TelegramClientWrapper:
             await self.start()
         return self._client
 
-    async def iter_messages(self, limit: int = 0):
+    async def iter_messages(self, limit: int = 0, min_id: int = 0):
         client = await self._ensure()
         self._require_user_session()
         entity = self._entity
-        async for msg in client.iter_messages(entity, limit=limit or None):
+        # min_id is a server-side filter: Telegram only returns messages
+        # newer than min_id, so incremental scans never re-walk history.
+        kwargs = {}
+        if min_id:
+            kwargs["min_id"] = min_id
+        async for msg in client.iter_messages(
+            entity, limit=limit or None, **kwargs
+        ):
             yield msg
 
     async def upload_file(

@@ -10,6 +10,9 @@ class Song {
   final String? mediaType; // 'audio' or 'video'
   final int? telegramMessageId;
   final bool hasVideo;
+  final int? year;
+  final String? genre;
+  final int playCount;
 
   Song({
     required this.id,
@@ -23,6 +26,9 @@ class Song {
     this.mediaType,
     this.telegramMessageId,
     this.hasVideo = false,
+    this.year,
+    this.genre,
+    this.playCount = 0,
   });
 
   bool get isVideo => mediaType == 'video' ||
@@ -58,6 +64,11 @@ class Song {
       mediaType: mediaType,
       telegramMessageId: tgId,
       hasVideo: hasVideo,
+      year: json['year'] is int ? json['year'] : int.tryParse(json['year']?.toString() ?? ''),
+      genre: json['genre'],
+      playCount: (json['play_count'] ?? 0) is int
+          ? json['play_count'] ?? 0
+          : int.tryParse((json['play_count'] ?? 0).toString()) ?? 0,
     );
   }
 
@@ -74,7 +85,73 @@ class Song {
       'media_type': mediaType,
       'telegram_message_id': telegramMessageId,
       'has_video': hasVideo,
+      'year': year,
+      'genre': genre,
+      'play_count': playCount,
     };
+  }
+}
+
+
+class Artist {
+  final String key;
+  final String name;
+  final String? coverArt;
+  final int songCount;
+  final int albumCount;
+  final int totalPlays;
+  final List<Song>? songs;
+  final List<ArtistAlbum>? albums;
+
+  Artist({
+    required this.key,
+    required this.name,
+    this.coverArt,
+    required this.songCount,
+    required this.albumCount,
+    required this.totalPlays,
+    this.songs,
+    this.albums,
+  });
+
+  factory Artist.fromJson(Map<String, dynamic> json) {
+    final songsJson = json['songs'] as List?;
+    final albumsJson = json['albums'] as List?;
+    return Artist(
+      key: json['key'] ?? json['name'] ?? '',
+      name: json['name'] ?? 'Unknown Artist',
+      coverArt: json['cover_art'],
+      songCount: json['song_count'] ?? 0,
+      albumCount: json['album_count'] ?? 0,
+      totalPlays: json['total_plays'] ?? 0,
+      songs: songsJson != null && songsJson.isNotEmpty && songsJson.first is Map
+          ? songsJson.map((j) => Song.fromJson(j as Map<String, dynamic>)).toList()
+          : null,
+      albums: albumsJson != null
+          ? albumsJson.map((j) => ArtistAlbum.fromJson(j as Map<String, dynamic>)).toList()
+          : null,
+    );
+  }
+}
+
+
+class ArtistAlbum {
+  final String? id;
+  final String name;
+  final int? year;
+  final String? coverArt;
+  final int songCount;
+
+  ArtistAlbum({this.id, required this.name, this.year, this.coverArt, required this.songCount});
+
+  factory ArtistAlbum.fromJson(Map<String, dynamic> json) {
+    return ArtistAlbum(
+      id: json['id'],
+      name: json['name'] ?? 'Unknown Album',
+      year: json['year'] is int ? json['year'] : int.tryParse(json['year']?.toString() ?? ''),
+      coverArt: json['cover_art'],
+      songCount: json['song_count'] ?? 0,
+    );
   }
 }
 

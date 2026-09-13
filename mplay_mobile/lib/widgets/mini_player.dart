@@ -2,8 +2,6 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../music_provider.dart';
-import 'glass_container.dart';
-import '../screens/player_screen.dart';
 import '../screens/unified_player_screen.dart';
 import '../providers/video_provider.dart';
 import '../constants.dart';
@@ -18,18 +16,14 @@ class MiniPlayer extends StatelessWidget {
 
     if (song == null) return const SizedBox.shrink();
 
-    // Calculate progress for the bar
-    final progress = music.duration.inSeconds > 0 
-        ? music.position.inSeconds / music.duration.inSeconds 
+    final progress = music.duration.inSeconds > 0
+        ? music.position.inSeconds / music.duration.inSeconds
         : 0.0;
+    final isTablet = Layout.isTablet(context);
 
     return GestureDetector(
       onTap: () {
-        // Close video overlay if open
         Provider.of<VideoProvider>(context, listen: false).close();
-        
-        // Always use UnifiedPlayerScreen for YouTube Music-style experience
-        // The Song/Video toggle will only appear if song.hasVideo is true
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (context) => UnifiedPlayerScreen(song: song, startWithVideo: false),
@@ -38,9 +32,9 @@ class MiniPlayer extends StatelessWidget {
         );
       },
       child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        margin: EdgeInsets.fromLTRB(isTablet ? 12 : 16, 0, isTablet ? 12 : 16, 16),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(14),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
             child: Container(
@@ -49,18 +43,15 @@ class MiniPlayer extends StatelessWidget {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withOpacity(0.15),
-                    Colors.white.withOpacity(0.05),
+                    Colors.white.withOpacity(0.12),
+                    Colors.white.withOpacity(0.04),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.2),
-                  width: 1,
-                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withOpacity(0.15), width: 0.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withOpacity(0.4),
                     blurRadius: 20,
                     offset: const Offset(0, 10),
                   ),
@@ -73,31 +64,31 @@ class MiniPlayer extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     child: Row(
                       children: [
-                        // Art with subtle shadow
+                        // Art
                         Container(
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
+                                color: Colors.black.withOpacity(0.3),
                                 blurRadius: 8,
                                 offset: const Offset(0, 4),
                               ),
                             ],
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
+                            borderRadius: BorderRadius.circular(8),
                             child: song.coverArt != null
-                                ? Image.network(song.coverArt!, width: 52, height: 52, fit: BoxFit.cover)
+                                ? Image.network(song.coverArt!, width: 48, height: 48, fit: BoxFit.cover)
                                 : Container(
-                                    width: 52,
-                                    height: 52,
-                                    color: Colors.white10,
-                                    child: const Icon(Icons.music_note, color: Colors.white54),
+                                    width: 48,
+                                    height: 48,
+                                    color: kSurfaceColor,
+                                    child: const Icon(Icons.music_note, color: Colors.white54, size: 20),
                                   ),
                           ),
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: 12),
                         // Info
                         Expanded(
                           child: Column(
@@ -107,8 +98,8 @@ class MiniPlayer extends StatelessWidget {
                               Text(
                                 song.title,
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600, 
-                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 14,
                                   letterSpacing: -0.3,
                                 ),
                                 maxLines: 1,
@@ -117,7 +108,7 @@ class MiniPlayer extends StatelessWidget {
                               const SizedBox(height: 2),
                               Text(
                                 song.artist,
-                                style: const TextStyle(color: Colors.white60, fontSize: 13),
+                                style: const TextStyle(color: Colors.white60, fontSize: 12),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -131,14 +122,10 @@ class MiniPlayer extends StatelessWidget {
                             IconButton(
                               icon: Icon(
                                 music.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                size: 32,
+                                size: 30,
                               ),
                               onPressed: () {
-                                if (music.isPlaying) {
-                                  music.pause();
-                                } else {
-                                  music.resume();
-                                }
+                                if (music.isPlaying) music.pause(); else music.resume();
                               },
                               color: Colors.white,
                               padding: EdgeInsets.zero,
@@ -146,7 +133,7 @@ class MiniPlayer extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             IconButton(
-                              icon: const Icon(Icons.skip_next_rounded, size: 28),
+                              icon: const Icon(Icons.skip_next_rounded, size: 26),
                               onPressed: () => music.next(),
                               color: Colors.white70,
                               padding: EdgeInsets.zero,
@@ -157,20 +144,20 @@ class MiniPlayer extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Progress bar at bottom
+                  // Progress bar
                   Container(
-                    height: 3,
-                    decoration: BoxDecoration(
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(16),
-                        bottomRight: Radius.circular(16),
+                    height: 2.5,
+                    decoration: const BoxDecoration(
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(14),
+                        bottomRight: Radius.circular(14),
                       ),
                     ),
                     child: LinearProgressIndicator(
                       value: progress.clamp(0.0, 1.0),
                       backgroundColor: Colors.white10,
                       valueColor: const AlwaysStoppedAnimation<Color>(kPrimaryColor),
-                      minHeight: 3,
+                      minHeight: 2.5,
                     ),
                   ),
                 ],

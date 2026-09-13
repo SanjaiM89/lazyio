@@ -4,10 +4,12 @@ from app.db.crud.songs import get_song_by_id
 
 
 def playlist_helper(playlist) -> dict:
+    songs = playlist.get("songs", []) or []
     return {
         "id": str(playlist["_id"]),
         "name": playlist.get("name", "Untitled"),
-        "songs": playlist.get("songs", []),
+        "songs": songs,
+        "song_count": len(songs),
         "cover_art": playlist.get("cover_art"),
         "created_at": playlist.get("created_at"),
         "is_ai_generated": playlist.get("is_ai_generated", False),
@@ -60,7 +62,18 @@ async def get_playlist_by_id(playlist_id: str) -> dict:
     try:
         pl = await playlists_collection.find_one({"_id": ObjectId(playlist_id)})
         if pl:
-            return playlist_helper(pl)
+            data = playlist_helper(pl)
+            # Resolve full song objects for detail views (missing ones pruned).
+            song_ids = data.get("songs", []) or []
+            songs = []
+            for sid in song_ids:
+                s = await get_song_by_id(sid)
+                if s:
+                    songs.append(s)
+            data["songs"] = songs
+            data["song_ids"] = [s["id"] for s in songs]
+            data["song_count"] = len(songs)
+            return data
     except:
         pass
     return None

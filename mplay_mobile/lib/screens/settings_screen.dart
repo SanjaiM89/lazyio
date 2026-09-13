@@ -28,19 +28,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     setState(() => _isLoading = true);
-    
+
     try {
-      // First load local settings
       final prefs = await SharedPreferences.getInstance();
       _domainController.text = prefs.getString('server_ip') ?? 'lazyio.duckdns.org';
       _portController.text = prefs.getString('server_port') ?? '';
-      
-      // Then try to fetch from server
+
       await _fetchFromServer();
     } catch (e) {
       print('Error loading settings: $e');
     }
-    
+
     setState(() => _isLoading = false);
   }
 
@@ -49,7 +47,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final response = await http.get(
         Uri.parse('${AppConfig.baseUrl}/api/connection-info'),
       ).timeout(const Duration(seconds: 5));
-      
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         setState(() {
@@ -59,7 +57,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           }
           if (data['updated_at'] != null) {
             final dt = DateTime.fromMillisecondsSinceEpoch(
-              (data['updated_at'] * 1000).toInt()
+              (data['updated_at'] * 1000).toInt(),
             );
             _lastUpdated = '${dt.hour}:${dt.minute.toString().padLeft(2, '0')} - ${dt.day}/${dt.month}/${dt.year}';
           }
@@ -88,16 +86,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
 
     try {
-      // Save locally
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('server_ip', domain);
       await prefs.setString('server_port', port);
 
-      // Update global config
       AppConfig.baseUrl = 'http://$domain:$port';
       AppConfig.wsUrl = 'ws://$domain:$port/ws';
 
-      // Try to update on server (optional, may fail if port changed)
       try {
         await http.post(
           Uri.parse('${AppConfig.baseUrl}/api/connection-info/port'),
@@ -108,29 +103,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         // Ignore server update errors
       }
 
-      setState(() {
-        _statusMessage = 'Settings saved!';
-      });
+      setState(() => _statusMessage = 'Settings saved!');
 
-      // Go back after short delay
       await Future.delayed(const Duration(milliseconds: 500));
       if (mounted) Navigator.of(context).pop();
-      
     } catch (e) {
-      setState(() {
-        _statusMessage = 'Error: $e';
-      });
+      setState(() => _statusMessage = 'Error: $e');
     } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final pad = Layout.horizontalPadding(context);
+
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: kBackgroundColor,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -141,19 +130,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
           : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
+              padding: EdgeInsets.all(pad),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // Server Info Card
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.05),
+                      color: kSurfaceColor,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withOpacity(0.1)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,20 +160,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text(
-                                    'Server Status',
-                                    style: TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 14,
-                                    ),
-                                  ),
+                                  const Text('Server Status', style: TextStyle(color: Colors.white70, fontSize: 14)),
                                   Text(
                                     _serverIp.isNotEmpty ? 'Connected ($_serverIp)' : 'Unknown',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
+                                    style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                                   ),
                                 ],
                               ),
@@ -195,22 +172,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                         if (_lastUpdated.isNotEmpty) ...[
                           const SizedBox(height: 12),
-                          Text(
-                            'Last updated: $_lastUpdated',
-                            style: const TextStyle(color: Colors.white38, fontSize: 12),
-                          ),
+                          Text('Last updated: $_lastUpdated', style: const TextStyle(color: Colors.white38, fontSize: 12)),
                         ],
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 32),
-                  
-                  // Domain Input
-                  const Text(
-                    'Server Domain',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
+
+                  const Text('Server Domain', style: TextStyle(color: Colors.white70, fontSize: 14)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _domainController,
@@ -220,21 +190,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       hintStyle: const TextStyle(color: Colors.white30),
                       prefixIcon: const Icon(Icons.dns, color: Colors.deepPurpleAccent),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
+                      fillColor: kSurfaceColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 24),
-                  
-                  // Port Input
-                  const Text(
-                    'Port Number',
-                    style: TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
+
+                  const Text('Port Number', style: TextStyle(color: Colors.white70, fontSize: 14)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _portController,
@@ -246,17 +212,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       hintStyle: const TextStyle(color: Colors.white30, fontSize: 16),
                       prefixIcon: const Icon(Icons.numbers, color: Colors.deepPurpleAccent),
                       filled: true,
-                      fillColor: Colors.white.withOpacity(0.05),
+                      fillColor: kSurfaceColor,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
                       ),
                     ),
                   ),
-                  
+
                   const SizedBox(height: 16),
-                  
-                  // Help text
+
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -276,9 +241,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ],
                     ),
                   ),
-                  
+
                   const SizedBox(height: 32),
-                  
+
                   if (_statusMessage.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(bottom: 16),
@@ -291,34 +256,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                  
-                  // Save Button
+
                   ElevatedButton(
                     onPressed: _isSaving ? null : _saveSettings,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepPurpleAccent,
                       padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
                     child: _isSaving
                         ? const SizedBox(
                             height: 20,
                             width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                           )
-                        : const Text(
-                            'Save Settings',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                        : const Text('Save Settings', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
                   ),
                 ],
               ),

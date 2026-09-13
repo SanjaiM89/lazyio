@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { getPlaylists, createPlaylist, addSongToPlaylist } from './api';
 
-const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
+const AddToPlaylistModal = ({ isOpen, onClose, song, songIds }) => {
     const [playlists, setPlaylists] = useState([]);
     const [loading, setLoading] = useState(true);
     const [newPlaylistName, setNewPlaylistName] = useState('');
     const [creating, setCreating] = useState(false);
+    const [addingId, setAddingId] = useState(null);
     const [error, setError] = useState(null);
+
+    // Effective song id list: explicit ids (album flow) or single song.
+    const ids = songIds && songIds.length > 0
+        ? songIds
+        : (song ? [song.id] : []);
+    const isAlbum = (songIds && songIds.length > 1) || ids.length > 1;
 
     useEffect(() => {
         if (isOpen) {
@@ -20,7 +27,7 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
         setLoading(true);
         try {
             const data = await getPlaylists(1, 100); // Fetch mostly all for this modal
-            setPlaylists(data.items || []);
+            setPlaylists(data.playlists || data.items || []);
         } catch (err) {
             console.error(err);
             setError('Failed to load playlists');
@@ -30,15 +37,11 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
     };
 
     const handleCreateAndAdd = async () => {
-        if (!newPlaylistName.trim()) return;
+        if (!newPlaylistName.trim() || ids.length === 0) return;
         setCreating(true);
         try {
-            // Create
-            const newPl = await createPlaylist(newPlaylistName);
-            // Add song
-            if (song) {
-                await addSongToPlaylist(newPl.id, song.id);
-            }
+            // Create pre-filled with the songs (backend supports songs at creation)
+            await createPlaylist(newPlaylistName.trim(), ids);
             onClose();
         } catch (err) {
             setError(err.response?.data?.detail || 'Failed to create playlist');
@@ -48,15 +51,26 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
     };
 
     const handleAddToExisting = async (playlist) => {
+        if (ids.length === 0) return;
+        setAddingId(playlist.id);
+        setError(null);
         try {
-            await addSongToPlaylist(playlist.id, song.id);
+            for (const sid of ids) {
+                await addSongToPlaylist(playlist.id, sid);
+            }
             onClose();
         } catch (err) {
-            setError(err.response?.data?.detail || 'Failed to add song');
+            setError(err.response?.data?.detail || 'Failed to add song(s)');
+        } finally {
+            setAddingId(null);
         }
     };
 
     if (!isOpen) return null;
+
+    const subtitle = isAlbum
+        ? <>Adding <span className="text-white">{ids.length} songs</span> to a playlist</>
+        : <>Adding <span className="text-white">{song?.title}</span></>;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
@@ -64,7 +78,7 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
             <div className="relative bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-md p-6 shadow-2xl">
                 <h2 className="text-xl font-bold mb-1">Add to Playlist</h2>
                 <p className="text-white/50 text-sm mb-6 truncate">
-                    Adding <span className="text-white">{song?.title}</span>
+                    {subtitle}
                 </p>
 
                 {error && (
@@ -81,6 +95,7 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
                         className="flex-1 bg-white/5 border border-white/10 rounded-lg px-4 py-2 focus:outline-none focus:border-pink-500/50 transition text-sm"
                         value={newPlaylistName}
                         onChange={(e) => setNewPlaylistName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleCreateAndAdd()}
                     />
                     <button
                         onClick={handleCreateAndAdd}
@@ -97,13 +112,14 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
                         {loading ? (
                             <div className="text-center py-4 text-white/30 text-sm">Loading...</div>
                         ) : playlists.length === 0 ? (
-                            <div className="text-center py-4 text-white/30 text-sm">No playlists found</div>
+                            <div className="text-center py-4 text-white/30 text-sm">No playlists yet — create one above</div>
                         ) : (
                             playlists.map(pl => (
                                 <button
                                     key={pl.id}
                                     onClick={() => handleAddToExisting(pl)}
-                                    className="w-full text-left p-3 rounded-lg hover:bg-white/5 flex items-center justify-between group transition"
+                                    disabled={addingId !== null}
+                                    className="w-full text-left p-3 rounded-lg hover:bg-white/5 flex items-center justify-between group transition disabled:opacity-50"
                                 >
                                     <div className="flex items-center gap-3">
                                         <div className="w-8 h-8 rounded bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center">
@@ -114,7 +130,11 @@ const AddToPlaylistModal = ({ isOpen, onClose, song }) => {
                                             <p className="text-xs text-white/40">{pl.song_count || 0} songs</p>
                                         </div>
                                     </div>
-                                    <svg className="w-5 h-5 text-white/20 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    {addingId === pl.id ? (
+                                        <span className="text-xs text-pink-400">Adding...</span>
+                                    ) : (
+                                        <svg className="w-5 h-5 text-white/20 group-hover:text-white transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                    )}
                                 </button>
                             ))
                         )}
