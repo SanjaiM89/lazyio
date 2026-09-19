@@ -19,6 +19,93 @@ _UNSUPPORTED_CODECS = {b"alac", b"ALAC"}
 
 _ALAC_CACHE: dict[str, bool] = {}
 
+# FLAC files whose embedded PICTURE block has an empty/invalid MIME type
+# are rejected by Chrome's demuxer (MEDIA_ERR_SRC_NOT_SUPPORTED) even
+# though the audio itself is perfectly valid. Those are served as a
+# lossless audio-only remux (same samples, metadata dropped).
+_REPAIR_CACHE: dict[str, bool] = {}
+_REPAIR_PROBE_CAP = 2 * 1024 * 1024
+
+
+def _flac_picture_status(head: bytes):
+    """Inspect FLAC metadata for a broken embedded-cover PICTURE block.
+
+    Returns True  -> malformed PICTURE (empty MIME) found: Chrome will refuse it.
+            False -> fully parsed and clean (or not FLAC at all).
+            None  -> need more header bytes to decide.
+    Only block headers are read; big blocks (seektable/art) are skipped
+    without downloading their contents.
+    """
+    if len(head) < 4:
+        return None
+    pos = 0
+    if head[:3] == b"ID3":
+        if len(head) < 10:
+            return None
+        size = 0
+        for b in head[6:10]:
+            size = (size << 7) | (b & 0x7F)
+        pos = 10 + size
+        if len(head) < pos + 4:
+            return None
+    if head[pos:pos + 4] != b"fLaC":
+        return False
+    p = pos + 4
+    while True:
+        if len(head) < p + 4:
+            return None
+        last = head[p] & 0x80
+        btype = head[p] & 0x7F
+        blen = int.from_bytes(head[p + 1:p + 4], "big")
+        if btype == 6:  # PICTURE: type(4) + mime_len(4) + mime...
+            if len(head) < p + 4 + 8:
+                return None
+            mime_len = int.from_bytes(head[p + 8:p + 12], "big")
+            if mime_len == 0:
+                return True
+            if len(head) < p + 4 + 8 + mime_len:
+                return None
+        p += 4 + blen
+        if last:
+            return False
+        if p > 4 * 1024 * 1024:
+            return False
+
+
+def _flac_streaminfo(head: bytes) -> dict:
+    """Best-effort FLAC STREAMINFO params for diagnostics."""
+    out: dict = {}
+    try:
+        pos = 0
+        if head[:3] == b"ID3":
+            size = 0
+            for b in head[6:10]:
+                size = (size << 7) | (b & 0x7F)
+            pos = 10 + size
+        if head[pos:pos + 4] != b"fLaC":
+            return out
+        p = pos + 4
+        while p + 4 <= len(head):
+            last = head[p] & 0x80
+            btype = head[p] & 0x7F
+            blen = int.from_bytes(head[p + 1:p + 4], "big")
+            if btype == 0 and len(head) >= p + 4 + 34:
+                si = head[p + 4:p + 4 + 34]
+                bits = int.from_bytes(si[10:18], "big")
+                out = {
+                    "sample_rate": (bits >> 44) & 0xFFFFF,
+                    "channels": ((bits >> 41) & 0x7) + 1,
+                    "bits_per_sample": ((bits >> 36) & 0x1F) + 1,
+                    "total_samples": bits & 0xFFFFFFFFF,
+                }
+                return out
+            p += 4 + blen
+            if last or p > 1024 * 1024:
+                break
+    except Exception:
+        pass
+    return out
+
 
 def _detect_alac(header: bytes) -> bool:
     """Check if an M4A header contains the ALAC codec.
@@ -117,7 +204,42 @@ async def diagnose_song(song_id: str):
         "error": err,
         "title": song.get("title"),
         "artist": song.get("artist"),
+        "audio_params": await _probe_audio_params(
+            song_id, message_id, media, file_size,
+            info.get("mime_type"), info.get("file_name"),
+        ),
     }
+
+
+async def _probe_audio_params(song_id, message_id, media, file_size, mime_type, file_name) -> dict:
+    """Best-effort codec parameters + browser-playability verdict."""
+    out: dict = {}
+    try:
+        flacish = (mime_type == "audio/flac") or (file_name or "").lower().endswith(".flac")
+        if not flacish:
+            return out
+        head = b""
+        async for chunk in telegram_client.stream_file(
+            message_id, offset=0, limit=_REPAIR_PROBE_CAP,
+            media=media, file_size=file_size,
+        ):
+            head += chunk
+            if len(head) >= _REPAIR_PROBE_CAP:
+                break
+            if _flac_picture_status(head) is not None and _flac_streaminfo(head):
+                break
+        out.update(_flac_streaminfo(head))
+        status = _flac_picture_status(head)
+        out["picture_status"] = (
+            "malformed (empty MIME) - Chrome will refuse, server remuxes losslessly"
+            if status is True else "ok" if status is False else "unknown (metadata beyond probe)"
+        )
+        out["served_as"] = "lossless-remux" if _REPAIR_CACHE.get(song_id) else (
+            "lossless-remux" if status is True else "original"
+        )
+    except Exception as e:
+        out["error"] = str(e)
+    return out
 
 
 @router.api_route("/{song_id}", methods=["GET", "HEAD"])
@@ -199,6 +321,33 @@ async def stream_song(song_id: str, request: Request, type: str = "audio"):
     if needs_transcode:
         print(f"[STREAM] {song_id} msg={message_id} size={file_size} ALAC->AAC transcode method={request.method} range={range_header!r}")
         return await _stream_transcoded(song_id, message_id, media, file_size, request)
+
+    # ── Detect FLAC with malformed embedded cover art ────────────────
+    # Chrome's demuxer hard-rejects PICTURE blocks with an empty MIME
+    # type (MEDIA_ERR_SRC_NOT_SUPPORTED, zero bytes consumed) even when
+    # the audio is valid. Serve those as a lossless audio-only remux.
+    needs_repair = _REPAIR_CACHE.get(song_id)
+    if needs_repair is None:
+        flacish = mime_type == "audio/flac" or (info.get("file_name") or "").lower().endswith(".flac")
+        if flacish:
+            head = b""
+            async for chunk in telegram_client.stream_file(
+                message_id, offset=0, limit=_REPAIR_PROBE_CAP,
+                media=media, file_size=file_size,
+            ):
+                head += chunk
+                if len(head) >= _REPAIR_PROBE_CAP:
+                    break
+                if _flac_picture_status(head) is not None:
+                    break
+            needs_repair = _flac_picture_status(head) is True
+        else:
+            needs_repair = False
+        _REPAIR_CACHE[song_id] = needs_repair
+
+    if needs_repair:
+        print(f"[STREAM] {song_id} msg={message_id} size={file_size} FLAC metadata repair (bad picture block) -> lossless remux range={range_header!r}")
+        return await _stream_flac_lossless(song_id, message_id, media, file_size, request)
 
     # Handle HEAD request for normal files
     if request.method == "HEAD":
@@ -362,3 +511,90 @@ async def _stream_transcoded(song_id: str, message_id: int, media, file_size: in
                     pass
 
     return StreamingResponse(gen(), status_code=200, headers=headers, media_type="audio/mp4")
+
+
+async def _stream_flac_lossless(song_id: str, message_id: int, media, file_size: int, request: Request):
+    """Serve a FLAC whose metadata Chrome rejects as a lossless remux.
+
+    Only the audio frames are re-muxed (`-map 0:a -c:a flac`); every
+    sample is preserved bit-for-bit, only the malformed metadata
+    (e.g. PICTURE block with empty MIME) is dropped. Like the ALAC
+    path, size changes mean no Range support: full 200, chunked.
+    """
+    headers = {
+        "Content-Type": "audio/flac",
+        "Accept-Ranges": "none",
+    }
+
+    if request.method == "HEAD":
+        return Response(status_code=200, headers=headers, media_type="audio/flac")
+
+    async def gen():
+        proc = None
+        try:
+            proc = await asyncio.subprocess.create_subprocess_exec(
+                "ffmpeg",
+                "-v", "error",
+                "-i", "pipe:0",             # read from stdin
+                "-map", "0:a",              # audio only: drops broken metadata
+                "-c:a", "flac",             # lossless, same samples
+                "-f", "flac",
+                "pipe:1",                    # write to stdout
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            async def feed_stdin():
+                """Download from Telegram and pipe into ffmpeg's stdin."""
+                try:
+                    async for chunk in telegram_client.stream_file(
+                        message_id, offset=0, limit=file_size,
+                        media=media, file_size=file_size,
+                    ):
+                        if proc.stdin.is_closing():
+                            break
+                        proc.stdin.write(chunk)
+                        await proc.stdin.drain()
+                except Exception as e:
+                    print(f"[FLACFIX] feed error for {song_id}: {e}")
+                finally:
+                    try:
+                        proc.stdin.close()
+                        await proc.stdin.wait_closed()
+                    except Exception:
+                        pass
+
+            feed_task = asyncio.create_task(feed_stdin())
+
+            yielded = 0
+            while True:
+                chunk = await proc.stdout.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                if await request.is_disconnected():
+                    print(f"[FLACFIX] {song_id}: client disconnected after {yielded} bytes")
+                    break
+                yielded += len(chunk)
+                yield chunk
+
+            await feed_task
+            try:
+                stderr = (await proc.stderr.read()) or b""
+                if stderr:
+                    print(f"[FLACFIX] {song_id} ffmpeg: {stderr.decode(errors='replace')[:300]}")
+            except Exception:
+                pass
+            print(f"[FLACFIX] {song_id} (msg={message_id}): done, sent {yielded} bytes")
+
+        except Exception as e:
+            print(f"[FLACFIX] {song_id} (msg={message_id}): EXCEPTION: {type(e).__name__}: {e}")
+        finally:
+            if proc and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+
+    return StreamingResponse(gen(), status_code=200, headers=headers, media_type="audio/flac")

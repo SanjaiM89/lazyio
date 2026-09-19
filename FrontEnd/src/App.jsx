@@ -1,413 +1,254 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { getSongs, getSongsPaginated, recordPlay, getWsUrl, getHomepage, deleteSong } from './api';
-import Player from './Player';
-import Upload from './Upload';
-import Albums from './Albums';
-import Artists from './Artists';
-import Home from './Home';
-import Playlists from './Playlists';
-import AddToPlaylistModal from './AddToPlaylistModal';
-import SongMenu from './SongMenu';
-import SettingsModal from './SettingsModal';
-import SmartSearch from './SmartSearch';
-import SearchResults from './SearchResults';
+import {
+  getSongsPaginated, getHomepage, getWsUrl, recordPlay, deleteSong,
+  getStreamUrl, getVideoStreamUrl, getSimilarSongs, getPlaylists,
+} from './api';
+import Sidebar from './components/Sidebar';
+import Header from './components/Header';
+import QueueSidebar from './components/QueueSidebar';
+import PlayerBar from './components/PlayerBar';
+import { AddToPlaylistModal, SongMenu, SettingsModal } from './components/Modals';
+import FullPlayer from './components/NocturnePlayer';
+import { HomeView, SongsView, AlbumsGridView, AlbumDetailView, ArtistsView, PlaylistsView, SearchView, VideosView, UploadView, LibraryView } from './views/Views';
 
-function App() {
-  const [currentSong, setCurrentSong] = useState(null);
-  const [songs, setSongs] = useState([]);
-  const [homepageData, setHomepageData] = useState(null);
+const fmt = (s) => {
+  if (!s || isNaN(s)) return '0:00';
+  return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`;
+};
+
+export default function App() {
   const [view, setView] = useState('home');
-  const [loading, setLoading] = useState(true);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [history, setHistory] = useState(['home']);
+  const [hi, setHi] = useState(0);
+  const [query, setQuery] = useState('');
+
+  const [songs, setSongs] = useState([]);
+  const [homepage, setHomepage] = useState(null);
+  const [playlists, setPlaylists] = useState([]);
+  const [currentSong, setCurrentSong] = useState(null);
+  const [queue, setQueue] = useState([]);
+  const [qi, setQi] = useState(-1);
+  const [suggestions, setSuggestions] = useState([]);
+
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [libLoading, setLibLoading] = useState(false);
+
+  const [albumFocus, setAlbumFocus] = useState(null);
+  const [artistFocus, setArtistFocus] = useState(null);
+  const [playlistSignal, setPlaylistSignal] = useState(null);
+
+  const [modalSong, setModalSong] = useState(null);
+  const [modalIds, setModalIds] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [menuCtx, setMenuCtx] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [libraryPage, setLibraryPage] = useState(1);
-  const [libraryLoading, setLibraryLoading] = useState(false);
-  const [hasMoreSongs, setHasMoreSongs] = useState(true);
-  const libraryRef = useRef(null);
 
-  // Search Results Page State
-  const [searchQuery, setSearchQuery] = useState('');
+  const [qtab, setQtab] = useState('queue');
+  const [expanded, setExpanded] = useState(false);
+  const [shuffle, setShuffle] = useState(false);
+  const [repeat, setRepeat] = useState(false);
 
-  // Playlist Modal State
-  const [playlistModalOpen, setPlaylistModalOpen] = useState(false);
-  const [songForPlaylist, setSongForPlaylist] = useState(null);
-  const [songsForPlaylist, setSongsForPlaylist] = useState(null);
+  // audio state
+  const audioRef = useRef(null);
+  const videoRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [volume, setVolume] = useState(0.8);
+  const [mode, setMode] = useState('audio');
 
-  // Search-driven focus: open a specific album/artist from SmartSearch
-  const [focusAlbumId, setFocusAlbumId] = useState(null);
-  const [focusArtistName, setFocusArtistName] = useState(null);
-
-  const handleSelectAlbum = (album) => {
-    setFocusAlbumId(album.id);
-    setView('albums');
+  const navigate = (v) => {
+    if (v === 'settings') { setSettingsOpen(true); return; }
+    setView(v);
+    setHistory((h) => [...h.slice(0, hi + 1), v]);
+    setHi((i) => i + 1);
   };
+  const back = () => { if (hi > 0) { setHi(hi - 1); setView(history[hi - 1]); } };
+  const fwd = () => { if (hi < history.length - 1) { setHi(hi + 1); setView(history[hi + 1]); } };
 
-  const handleSelectArtist = (artist) => {
-    setFocusArtistName(artist.name);
-    setView('artists');
+  const loadSongs = async (p = 1, append = false) => {
+    if (append && (libLoading || !hasMore)) return;
+    setLibLoading(true);
+    try {
+      const d = await getSongsPaginated(p, 50);
+      setSongs((prev) => (append ? [...prev, ...d.songs] : d.songs));
+      setHasMore(p < d.pages);
+      setPage(p);
+      if (!append && d.songs?.length) setQueue((q) => (q.length ? q : d.songs));
+    } catch (e) { console.error(e); } finally { setLibLoading(false); }
   };
-
-  const handleSearchSubmit = (query) => {
-    setSearchQuery(query);
-    setView('search');
-  };
+  const loadHome = async () => { try { setHomepage(await getHomepage()); } catch (e) { console.error(e); } };
+  const loadPlaylists = async () => { try { setPlaylists((await getPlaylists(1, 20)).playlists || []); } catch (e) { console.error(e); } };
 
   useEffect(() => {
-    loadSongs();
-    loadHomepageData();
-
-    // WebSocket for real-time updates (auto-reconnects with backoff)
-    let ws = null;
-    let wsRetry = 0;
-    let wsTimer = null;
-    let wsAlive = true;
-
-    const connectWs = () => {
-      if (!wsAlive) return;
-      try {
-        ws = new WebSocket(getWsUrl());
-      } catch {
-        scheduleWsRetry();
-        return;
-      }
-
-      ws.onopen = () => {
-        console.log('Connected to notification server');
-        wsRetry = 0;
-      };
-
-      ws.onmessage = (event) => {
-        if (event.data === 'library_updated') {
-          console.log('Library update received, refreshing...');
-          loadSongs();
-        }
-      };
-
-      ws.onerror = () => {
-        try { ws.close(); } catch { /* closed already */ }
-      };
-
-      ws.onclose = () => {
-        scheduleWsRetry();
-      };
+    loadSongs(1); loadHome(); loadPlaylists();
+    let alive = true, ws = null, retry = 0, timer = null;
+    const connect = () => {
+      if (!alive) return;
+      try { ws = new WebSocket(getWsUrl()); } catch { sched(); return; }
+      ws.onopen = () => { retry = 0; };
+      ws.onmessage = (e) => { if (e.data === 'library_updated') { loadSongs(1); loadHome(); } };
+      ws.onerror = () => { try { ws.close(); } catch {} };
+      ws.onclose = sched;
     };
-
-    const scheduleWsRetry = () => {
-      if (!wsAlive) return;
-      wsRetry += 1;
-      const delay = Math.min(1000 * 2 ** Math.min(wsRetry, 5), 30000);
-      clearTimeout(wsTimer);
-      wsTimer = setTimeout(connectWs, delay);
-    };
-
-    connectWs();
-
-    return () => {
-      wsAlive = false;
-      clearTimeout(wsTimer);
-      try { ws?.close(); } catch { /* ignore */ }
-    };
+    const sched = () => { if (!alive) return; retry += 1; clearTimeout(timer); timer = setTimeout(connect, Math.min(1000 * 2 ** Math.min(retry, 5), 30000)); };
+    connect();
+    return () => { alive = false; clearTimeout(timer); try { ws?.close(); } catch {} };
   }, []);
 
-  const loadMoreSongs = useCallback(() => {
-    if (libraryLoading || !hasMoreSongs) return;
-    loadSongs(libraryPage + 1, true);
-  }, [libraryLoading, hasMoreSongs, libraryPage]);
+  // autoplay suggestions
+  useEffect(() => {
+    if (!currentSong) return;
+    getSimilarSongs(currentSong.id, 6).then((d) => setSuggestions(d.similar || d.songs || [])).catch(() => {});
+  }, [currentSong?.id]);
 
-  const loadSongs = async (page = 1, append = false) => {
-    try {
-      setLibraryLoading(true);
-      const data = await getSongsPaginated(page, 50);
-      if (append) {
-        setSongs(prev => [...prev, ...data.songs]);
-      } else {
-        setSongs(data.songs);
-      }
-      setHasMoreSongs(page < data.pages);
-      setLibraryPage(page);
-    } catch (error) {
-      console.error("Error loading songs:", error);
-    } finally {
-      setLibraryLoading(false);
-      setLoading(false);
-    }
-  };
+  // audio element wiring
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a || !currentSong) return;
+    setProgress(0);
+    setDuration(currentSong.duration || 0);
+    setMode('audio');
+    const t = setTimeout(() => { a.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false)); }, 60);
+    recordPlay(currentSong.id).catch(() => {});
+    return () => clearTimeout(t);
+  }, [currentSong?.id]);
 
-  const loadHomepageData = async () => {
-    try {
-      const data = await getHomepage();
-      setHomepageData(data);
-    } catch (error) {
-      console.error("Error loading homepage:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume; }, [volume]);
 
-  const handlePlaySong = async (song) => {
+  const play = useCallback((song, list) => {
+    const q = list || queue.length ? (list || queue) : songs;
+    const idx = q.findIndex((s) => s.id === song.id);
+    setQueue(q);
+    setQi(idx >= 0 ? idx : 0);
     setCurrentSong(song);
-    const idx = songs.findIndex(s => s.id === song.id);
-    if (idx >= 0) setCurrentIndex(idx);
-    // Record play for history
-    try {
-      await recordPlay(song.id);
-    } catch (err) {
-      console.error('Failed to record play:', err);
-    }
+    setIsPlaying(true);
+  }, [queue, songs]);
+
+  const next = useCallback(() => {
+    const q = queue.length ? queue : songs;
+    if (!q.length) return;
+    let n;
+    if (shuffle) n = Math.floor(Math.random() * q.length);
+    else n = qi + 1 >= q.length ? (repeat ? 0 : qi) : qi + 1;
+    if (n === qi && !repeat && n === q.length - 1) { setIsPlaying(false); audioRef.current?.pause(); return; }
+    setQi(n); setCurrentSong(q[n]); setIsPlaying(true);
+  }, [queue, songs, qi, shuffle, repeat]);
+
+  const prev = useCallback(() => {
+    const q = queue.length ? queue : songs;
+    if (!q.length) return;
+    const n = qi <= 0 ? q.length - 1 : qi - 1;
+    setQi(n); setCurrentSong(q[n]); setIsPlaying(true);
+  }, [queue, songs, qi]);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a || !currentSong) return;
+    if (isPlaying) { a.pause(); setIsPlaying(false); }
+    else { a.play().then(() => setIsPlaying(true)).catch(() => {}); }
   };
 
-  // Open Playlist Modal
-  const handleAddToPlaylist = (song) => {
-    setSongForPlaylist(song);
-    setSongsForPlaylist(null);
-    setPlaylistModalOpen(true);
+  const onTime = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setProgress(a.currentTime);
+    if (a.duration && isFinite(a.duration)) setDuration(a.duration);
   };
+  const onSeek = (e) => { const t = parseFloat(e.target.value); if (audioRef.current) { audioRef.current.currentTime = t; setProgress(t); } };
 
-  // Open Playlist Modal for a whole album (list of song ids)
-  const handleAddAlbumToPlaylist = (songIds) => {
-    if (!songIds || songIds.length === 0) return;
-    setSongForPlaylist(null);
-    setSongsForPlaylist(songIds);
-    setPlaylistModalOpen(true);
+  const openAddSingle = (song) => { setModalSong(song); setModalIds(null); setModalOpen(true); };
+  const openAddAlbum = (album) => {
+    const ids = (album.songs || []).map((s) => s.id).filter(Boolean);
+    if (!ids.length && album.song_ids?.length) { setModalIds(album.song_ids); }
+    else if (ids.length) setModalIds(ids);
+    else return;
+    setModalSong(null); setModalOpen(true);
   };
+  const delSong = async (s) => { try { await deleteSong(s.id); loadSongs(1); loadHome(); } catch (e) { console.error(e); } };
 
-  const handleNext = () => {
-    if (songs.length === 0) return;
-    const nextIdx = (currentIndex + 1) % songs.length;
-    setCurrentIndex(nextIdx);
-    setCurrentSong(songs[nextIdx]);
-  };
-
-  const handlePrev = () => {
-    if (songs.length === 0) return;
-    const prevIdx = currentIndex === 0 ? songs.length - 1 : currentIndex - 1;
-    setCurrentIndex(prevIdx);
-    setCurrentSong(songs[prevIdx]);
-  };
-
-  const handleUploadComplete = () => {
-    loadSongs();
-    setView('nowplaying');
-  };
-
-  const handleNavigate = (viewId) => {
-    setView(viewId);
-  };
-
-  const navItems = [
-    { id: 'home', label: 'Home', icon: '🏠' },
-    { id: 'nowplaying', label: 'Now Playing' },
-    { id: 'playlist', label: 'Library' }, // Keeping ID 'playlist' for Library view legacy, but label is Library
-    { id: 'albums', label: 'Albums' },
-    { id: 'artists', label: 'Artists' },
-    { id: 'playlists', label: 'Playlists' }, // New Playlists view
-    { id: 'upload', label: 'Upload' },
-  ];
+  const hasVideo = currentSong?.has_video || currentSong?.hasVideo;
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
-      {/* Top Navigation */}
-      <nav className="glass-dark border-b border-white/5 px-8 py-4 flex items-center justify-between z-50">
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-3">
-            <img src="/favicon.png" alt="Lazyio" className="w-8 h-8 rounded-lg" />
-            <span className="text-xl font-bold bg-gradient-to-r from-pink-500 to-purple-500 bg-clip-text text-transparent">
-              Lazyio
-            </span>
-          </div>
-          <div className="flex items-center gap-6">
-            {navItems.map(item => (
-              <button
-                key={item.id}
-                onClick={() => handleNavigate(item.id)}
-                className={`text-sm font-medium transition-all relative py-2
-                  ${view === item.id
-                    ? 'text-white'
-                    : 'text-white/50 hover:text-white/80'
-                  }`}
-              >
-                {item.label}
-                {view === item.id && (
-                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-pink-500 rounded-full" />
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-6">
-          <SmartSearch
-            songs={songs}
-            onSelectSong={handlePlaySong}
-            onSelectAlbum={handleSelectAlbum}
-            onSelectArtist={handleSelectArtist}
-            onSearchSubmit={handleSearchSubmit}
-          />
-
-          <div
-            className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center cursor-pointer hover:opacity-90 transition shadow-lg shadow-pink-500/20"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <span className="text-sm font-medium">U</span>
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Content Area - Stacked for persistence */}
-      <div className="flex-1 flex flex-col overflow-hidden relative">
-        {/* Pages that can be unmounted */}
-        {view === 'home' && (
-          <Home
-            data={homepageData}
-            onPlaySong={handlePlaySong}
-            onNavigate={handleNavigate}
-            onRefresh={loadHomepageData}
-            onOpenPlaylistModal={handleAddToPlaylist}
-          />
-        )}
-        {view === 'search' && (
-          <SearchResults
-            query={searchQuery}
-            onPlaySong={handlePlaySong}
-            onSelectAlbum={handleSelectAlbum}
-            onSelectArtist={handleSelectArtist}
-            onOpenPlaylistModal={handleAddToPlaylist}
-            onAddAlbumToPlaylist={handleAddAlbumToPlaylist}
-          />
-        )}
-        {view === 'albums' && (
-          <Albums
-            onPlaySong={handlePlaySong}
-            onAddAlbumToPlaylist={handleAddAlbumToPlaylist}
-            focusAlbumId={focusAlbumId}
-            onClearFocus={() => setFocusAlbumId(null)}
-          />
-        )}
-        {view === 'artists' && (
-          <Artists
-            onPlaySong={handlePlaySong}
-            onSelectAlbum={handleSelectAlbum}
-            focusArtistName={focusArtistName}
-            onClearFocus={() => setFocusArtistName(null)}
-          />
-        )}
-        {view === 'upload' && <Upload onUploadComplete={handleUploadComplete} />}
-        {view === 'playlists' && <Playlists onPlaySong={handlePlaySong} onNavigate={handleNavigate} onOpenPlaylistModal={handleAddToPlaylist} />}
-
-        {view === 'playlist' && (
-          <div className="h-full flex-1 overflow-y-auto p-8" ref={libraryRef} onScroll={(e) => {
-            const { scrollTop, scrollHeight, clientHeight } = e.target;
-            if (scrollHeight - scrollTop - clientHeight < 200) {
-              loadMoreSongs();
-            }
-          }}>
-            <div className="max-w-4xl mx-auto">
-              <h1 className="text-3xl font-bold mb-8 animate-fade-in">Your Library</h1>
-              {loading ? (
-                <div className="flex items-center justify-center py-20">
-                  <div className="w-12 h-12 rounded-full border-4 border-pink-500/30 border-t-pink-500 animate-spin" />
-                </div>
-              ) : songs.length === 0 ? (
-                <div className="text-center py-20 animate-fade-in">
-                  <div className="w-24 h-24 mx-auto mb-6 rounded-full bg-white/5 flex items-center justify-center">
-                    <svg className="w-12 h-12 text-white/20" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-                    </svg>
-                  </div>
-                  <p className="text-xl text-white/40 mb-4">No songs yet</p>
-                  <button onClick={() => handleNavigate('upload')} className="btn-primary">
-                    Upload Music
-                  </button>
-                </div>
-              ) : (
-                <>
-                <div className="space-y-2">
-                  {songs.map((song, index) => (
-                    <div
-                      key={song.id}
-                      className={`group song-item flex items-center gap-4 p-4 rounded-xl cursor-pointer animate-fade-in
-                        ${currentSong?.id === song.id ? 'bg-pink-500/10 border border-pink-500/20' : 'hover:bg-white/5'}`}
-                      onClick={() => handlePlaySong(song)}
-                    >
-                      <div className="w-14 h-14 rounded-lg bg-gradient-to-br from-pink-500/20 to-purple-600/20 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                        {currentSong?.id === song.id ? (
-                          <div className="flex items-end gap-0.5 h-5">
-                            {[...Array(3)].map((_, i) => (
-                              <div key={i} className="w-1 bg-pink-500 rounded-full visualizer-bar" style={{ animationDelay: `${i * 0.1}s` }} />
-                            ))}
-                          </div>
-                        ) : (song.cover_art || song.thumbnail) ? (
-                          <img src={song.cover_art || song.thumbnail} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <span className="text-white/40">{index + 1}</span>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold truncate">{song.title || "Unknown"}</p>
-                        <p className="text-sm text-white/50 truncate">{song.artist || "Unknown Artist"}</p>
-                      </div>
-
-                      {/* Song Menu - visible on hover */}
-                      <SongMenu
-                        className="opacity-0 group-hover:opacity-100 transition mr-2"
-                        song={song}
-                        onAddToPlaylist={handleAddToPlaylist}
-                        onDelete={async (s) => {
-                          try {
-                            await deleteSong(s.id);
-                            loadSongs();
-                          } catch (err) {
-                            console.error("Failed to delete song:", err);
-                          }
-                        }}
-                      />
-
-                      <span className="text-sm text-white/40">{song.album || ""}</span>
-                      <span className="text-sm text-white/40 w-16 text-right">
-                        {song.duration ? `${Math.floor(song.duration / 60)}:${(song.duration % 60).toString().padStart(2, '0')}` : "—"}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {libraryLoading && (
-                  <div className="flex items-center justify-center py-8">
-                    <div className="w-8 h-8 rounded-full border-2 border-pink-500/30 border-t-pink-500 animate-spin" />
-                  </div>
-                )}
-                {!hasMoreSongs && songs.length > 0 && (
-                  <p className="text-center text-white/30 text-sm py-6">All songs loaded</p>
-                )}
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Now Playing - handled by persistent player */}
+    <div className="bg-background text-on-surface min-h-screen font-body-md text-body-md antialiased">
+      <Sidebar
+        view={view} onNavigate={navigate}
+        query={query} setQuery={setQuery} songs={songs}
+        onPlay={(s) => play(s)}
+        onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }}
+        onOpenArtist={(a) => { setArtistFocus(a.name); navigate('artists'); }}
+        playlists={playlists}
+        onOpenPlaylist={(p) => { setPlaylistSignal(p); navigate('playlists'); }}
+        onCreatePlaylist={() => navigate('playlists')}
+      />
+      <QueueSidebar
+        currentSong={currentSong} queue={queue.slice(Math.max(0, qi + 1)).concat(queue.slice(0, Math.max(0, qi + 1)).length ? [] : [])}
+        suggestions={suggestions} onPlay={(s) => play(s)}
+        tab={qtab} setTab={setQtab} isPlaying={isPlaying}
+      />
+      <div className="pl-64 pr-80 min-h-screen flex flex-col">
+        <Header view={view} onNavigate={navigate} onBack={back} onForward={fwd} />
+        <main className="relative pt-16 pb-28 w-full px-margin flex-1">
+          {view === 'home' && <HomeView data={homepage} onPlay={(s) => play(s, homepage?.ai_playlist?.songs?.length ? undefined : songs)} currentId={currentSong?.id} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} onRefresh={() => { loadHome(); loadSongs(1); }} onMenu={(s) => setMenuCtx(s)} />}
+          {view === 'search' && <SearchView query={query} songs={songs} onPlay={(s) => play(s)} currentId={currentSong?.id} onMenu={(s) => setMenuCtx(s)} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} onOpenArtist={(a) => { setArtistFocus(a.name); navigate('artists'); }} />}
+          {view === 'library' && <LibraryView songs={songs} currentId={currentSong?.id} onPlay={(s) => play(s)} onMenu={(s) => setMenuCtx(s)} onLoadMore={() => loadSongs(page + 1, true)} hasMore={hasMore} loading={libLoading} />}
+          {view === 'songs' && <SongsView songs={songs} currentId={currentSong?.id} onPlay={(s) => play(s)} onMenu={(s) => setMenuCtx(s)} onLoadMore={() => loadSongs(page + 1, true)} hasMore={hasMore} loading={libLoading} />}
+          {view === 'albums-grid' && <AlbumsGridView onOpen={(a) => { setAlbumFocus(a.id); navigate('album'); }} onAddAlbum={openAddAlbum} />}
+          {view === 'albums' && <AlbumsGridView onOpen={(a) => { setAlbumFocus(a.id); navigate('album'); }} onAddAlbum={openAddAlbum} />}
+          {view === 'album' && albumFocus && <AlbumDetailView albumId={albumFocus} onBack={() => navigate('albums-grid')} currentId={currentSong?.id} onPlay={play} onAddAlbum={openAddAlbum} onMenu={(s) => setMenuCtx(s)} />}
+          {view === 'artists' && <ArtistsView onPlay={play} focusName={artistFocus} onClearFocus={() => setArtistFocus(null)} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} />}
+          {view === 'playlists' && <PlaylistsView onPlay={play} currentId={currentSong?.id} onMenu={(s) => setMenuCtx(s)} openSignal={playlistSignal} onOpened={() => setPlaylistSignal(null)} />}
+          {view === 'videos' && <VideosView songs={songs} onPlay={(s) => play(s)} />}
+          {view === 'upload' && <UploadView onDone={() => { loadSongs(1); loadHome(); }} />}
+        </main>
       </div>
 
-      {/* Persistent Player - Handles both Mini and Full views */}
-      <Player
-        currentSong={currentSong}
-        onNext={handleNext}
-        onPrev={handlePrev}
-        playlist={songs}
-        onSelectSong={handlePlaySong}
-        fullView={view === 'nowplaying'}
-        onToggleView={() => setView(v => v === 'nowplaying' ? 'home' : 'nowplaying')}
-        onOpenPlaylistModal={handleAddToPlaylist}
+      <PlayerBar
+        currentSong={currentSong} isPlaying={isPlaying}
+        progress={progress} duration={duration} volume={volume} setVolume={setVolume}
+        onToggle={toggle} onNext={next} onPrev={prev} onSeek={onSeek}
+        onExpand={() => setExpanded(true)}
+        shuffle={shuffle} setShuffle={setShuffle} repeat={repeat} setRepeat={setRepeat}
       />
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
-      {/* Global Modals */}
-      <AddToPlaylistModal
-        isOpen={playlistModalOpen}
-        onClose={() => setPlaylistModalOpen(false)}
-        song={songForPlaylist}
-        songIds={songsForPlaylist}
+      {expanded && (
+        <FullPlayer
+          song={currentSong} isPlaying={isPlaying} progress={progress} duration={duration}
+          volume={volume} setVolume={setVolume}
+          onToggle={toggle} onNext={next} onPrev={prev} onSeek={onSeek}
+          onClose={() => setExpanded(false)} queue={queue} onPlay={(s) => play(s)}
+          suggestions={suggestions}
+          shuffle={shuffle} setShuffle={setShuffle} repeat={repeat} setRepeat={setRepeat}
+          onAdd={openAddSingle}
+          hasVideo={hasVideo} mode={mode} setMode={setMode} videoRef={videoRef} audioRef={audioRef} formatTime={fmt}
+        />
+      )}
+
+      <audio
+        ref={audioRef}
+        src={currentSong ? getStreamUrl(currentSong.id) : undefined}
+        onTimeUpdate={onTime}
+        onEnded={next}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        style={{ display: 'none' }}
       />
+
+      <AddToPlaylistModal open={modalOpen} onClose={() => setModalOpen(false)} song={modalSong} songIds={modalIds} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {menuCtx && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setMenuCtx(null)}>
+          <div className="w-64 rounded-2xl bg-surface-container-high border border-white/10 p-2" onClick={(e) => e.stopPropagation()}>
+            <p className="px-3 py-2 font-label-md text-label-md truncate">{menuCtx.title}</p>
+            <button onClick={() => { openAddSingle(menuCtx); setMenuCtx(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 font-label-md text-label-md" type="button">Add to playlist</button>
+            <button onClick={() => { play(menuCtx); setMenuCtx(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-white/10 font-label-md text-label-md" type="button">Play now</button>
+            <button onClick={() => { delSong(menuCtx); setMenuCtx(null); }} className="w-full text-left px-3 py-2 rounded-lg hover:bg-error-container/40 text-error font-label-md text-label-md" type="button">Delete</button>
+          </div>
+        </div>
+      )}
+      {/* hidden SongMenu compat */}
+      <span className="hidden"><SongMenu song={currentSong} onAdd={openAddSingle} onDelete={delSong} /></span>
     </div>
   );
 }
-
-export default App;

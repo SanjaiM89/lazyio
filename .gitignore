@@ -11,3 +11,7 @@ BackEnd/__pycache__/
 **/__pycache__/
 **/venv/
 BackEnd/cache/
+
+node_modules/
+dist/
+.vite/

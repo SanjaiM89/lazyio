@@ -128,8 +128,16 @@ export const getAlbum = async (albumId) => {
 
 // ==================== Search (songs + albums + artists) ====================
 
-export const searchLibrary = async (query) => {
-    const response = await api.get('/search', { params: { q: query } });
+export const searchLibrary = async (query, songLimit = 20, albumLimit = 8, artistLimit = 8) => {
+    const response = await api.get('/search', {
+        params: { q: query, song_limit: songLimit, album_limit: albumLimit, artist_limit: artistLimit },
+    });
+    return response.data;
+};
+
+// Lightweight as-you-type autocomplete (id/title/artist only).
+export const suggestLibrary = async (query, limit = 6) => {
+    const response = await api.get('/search/suggest', { params: { q: query, limit } });
     return response.data;
 };
 

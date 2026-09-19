@@ -1,4 +1,5 @@
 import re
+from difflib import SequenceMatcher
 from bson import ObjectId
 from app.db.connection import songs_collection, albums_collection
 
@@ -402,20 +403,129 @@ async def get_song_by_telegram_id(message_id: int) -> dict | None:
         return None
 
 
-async def search_songs(query: str):
-    songs = []
-    regex_query = {"$regex": query, "$options": "i"}
+async def search_songs(query: str, limit: int = 50):
+    """Fast path first: in-memory index (inverted postings + typo tolerance
+    + personalized ranking). Falls back to Mongo regex + difflib when the
+    index is unavailable, so search never hard-fails.
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    try:
+        from app.db.crud.search_engine import get_engine
+
+        engine = await get_engine()
+        if engine.songs:
+            return engine.search_songs(q, limit=limit)
+    except Exception:
+        pass
+    return await _search_songs_mongo(q, limit)
+
+
+async def _search_songs_mongo(query: str, limit: int = 50):
+    """Substring search (regex-escaped) + typo-tolerant fuzzy fallback."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    rx = {"$regex": re.escape(q), "$options": "i"}
+    exact: list = []
+    seen = set()
     async for song in songs_collection.find(
         {
             "$or": [
-                {"title": regex_query},
-                {"artist": regex_query},
-                {"album": regex_query},
+                {"title": rx},
+                {"artist": rx},
+                {"album": rx},
             ]
         }
+    ).limit(limit):
+        exact.append(song_helper(song))
+        seen.add(str(song["_id"]))
+    if len(exact) >= limit:
+        return exact[:limit]
+    # Fuzzy fill: score every remaining candidate, keep the best ones.
+    scored: list[tuple[float, dict]] = []
+    async for song in songs_collection.find(
+        {},
+        projection={
+            "title": 1, "artist": 1, "album": 1, "play_count": 1,
+            "duration": 1, "cover_art": 1, "thumbnail": 1,
+            "file_name": 1, "has_video": 1, "s3_video_key": 1,
+            "telegram_message_id": 1, "album_key": 1, "year": 1,
+            "genre": 1,
+        },
     ):
-        songs.append(song_helper(song))
-    return songs
+        sid = str(song["_id"])
+        if sid in seen:
+            continue
+        score = _match_score(
+            q, song.get("title"), song.get("artist"), song.get("album")
+        )
+        if score >= _FUZZY_THRESHOLD:
+            scored.append((score, song))
+    scored.sort(
+        key=lambda t: (-t[0], -(t[1].get("play_count") or 0))
+    )
+    for _, song in scored[: max(0, limit - len(exact))]:
+        exact.append(song_helper(song))
+    return exact
+
+
+# ------------------------- fuzzy matching helpers -------------------------
+
+_FUZZY_THRESHOLD = 0.55
+
+
+def _norm_search(value: str | None) -> str:
+    """Lowercase alphanumeric normalization for fuzzy comparison."""
+    if not value:
+        return ""
+    value = value.strip().lower()
+    value = re.sub(r"[^a-z0-9 ]", " ", value)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def _match_score(query: str, *fields: str | None) -> float:
+    """0..1 relevance of a query against candidate text fields.
+
+    Exact substring => 1.0. Otherwise the best of full-string similarity
+    and per-token coverage, so both "shape of you" and "shap of yu"
+    still match "Shape of You".
+    """
+    q = _norm_search(query)
+    if not q:
+        return 0.0
+    norms = [_norm_search(f) for f in fields]
+    norms = [n for n in norms if n]
+    if not norms:
+        return 0.0
+    for n in norms:
+        if q in n:
+            return 1.0
+    best = 0.0
+    for n in norms:
+        best = max(best, SequenceMatcher(None, q, n).ratio())
+        # Long candidates dilute full-string ratio; also compare against a
+        # sliding window of query length so "midnight" matches a long title.
+        if len(n) > len(q) + 4 and len(q) >= 4:
+            for i in range(0, len(n) - len(q) + 1):
+                best = max(
+                    best,
+                    SequenceMatcher(None, q, n[i : i + len(q)]).ratio()
+                    * 0.95,
+                )
+                if best >= 1.0:
+                    return 1.0
+    # Token coverage: every query word should resemble some candidate word.
+    words = [w for n in norms for w in n.split()]
+    qtokens = q.split()
+    if words and qtokens:
+        sims = [
+            max(SequenceMatcher(None, qt, w).ratio() for w in words)
+            for qt in qtokens
+        ]
+        best = max(best, sum(sims) / len(sims))
+    return best
 
 
 async def get_all_vectors() -> dict:
@@ -539,7 +649,7 @@ async def get_artists(page: int = 1, limit: int = 20, query: str = None) -> dict
     if query and query.strip():
         match["artist"] = {
             **match["artist"],
-            "$regex": query.strip(),
+            "$regex": re.escape(query.strip()),
             "$options": "i",
         }
     pipeline = [
@@ -715,16 +825,35 @@ async def get_artist_detail(name: str) -> dict | None:
 async def search_library(
     query: str, song_limit: int = 8, album_limit: int = 8, artist_limit: int = 8
 ) -> dict:
-    """Unified search across songs, albums and artists."""
+    """Unified search across songs, albums and artists (typo-tolerant)."""
     q = (query or "").strip()
     if not q:
         return {"songs": [], "albums": [], "artists": []}
-    songs = await search_songs(q)
-    rx = {"$regex": q, "$options": "i"}
+    song_limit = max(1, min(song_limit, 50))
+    album_limit = max(1, min(album_limit, 50))
+    artist_limit = max(1, min(artist_limit, 50))
+    songs = await search_songs(q, limit=song_limit)
+    # Fast path: albums + artists from the in-memory index (no extra
+    # queries, no cover-API calls). Falls through to Mongo on any failure.
+    try:
+        from app.db.crud.search_engine import get_engine
+
+        engine = await get_engine()
+        if engine.songs:
+            return {
+                "songs": songs[:song_limit],
+                "albums": engine.search_albums(q, limit=album_limit),
+                "artists": engine.search_artists(q, limit=artist_limit),
+            }
+    except Exception:
+        pass
+    rx = {"$regex": re.escape(q), "$options": "i"}
     albums = []
+    seen_albums = set()
     async for a in albums_collection.find(
         {"$or": [{"name": rx}, {"artist": rx}]}
     ).limit(album_limit):
+        seen_albums.add(str(a["_id"]))
         albums.append(
             {
                 "id": str(a["_id"]),
@@ -734,5 +863,64 @@ async def search_library(
                 "song_count": len(a.get("song_ids", []) or []),
             }
         )
+    if len(albums) < album_limit:
+        # Fuzzy fill for albums with typos in the query.
+        scored: list[tuple[float, dict]] = []
+        async for a in albums_collection.find(
+            {}, projection={"name": 1, "artist": 1, "cover_art": 1, "song_ids": 1}
+        ):
+            if str(a["_id"]) in seen_albums:
+                continue
+            score = _match_score(q, a.get("name"), a.get("artist"))
+            if score >= _FUZZY_THRESHOLD:
+                scored.append((score, a))
+        scored.sort(key=lambda t: -t[0])
+        for _, a in scored[: album_limit - len(albums)]:
+            albums.append(
+                {
+                    "id": str(a["_id"]),
+                    "name": a.get("name"),
+                    "artist": a.get("artist"),
+                    "cover_art": a.get("cover_art"),
+                    "song_count": len(a.get("song_ids", []) or []),
+                }
+            )
     artists = (await get_artists(page=1, limit=artist_limit, query=q))["artists"]
+    if len(artists) < artist_limit:
+        # Fuzzy fill for artists: score the full directory (cheap, grouped).
+        have = {a.get("key") for a in artists}
+        all_artists = (await get_artists(page=1, limit=500))["artists"]
+        scored_names: list[tuple[float, dict]] = []
+        for a in all_artists:
+            if a.get("key") in have:
+                continue
+            score = _match_score(q, a.get("name"))
+            if score >= _FUZZY_THRESHOLD:
+                scored_names.append((score, a))
+        scored_names.sort(key=lambda t: -t[0])
+        artists = artists + [a for _, a in scored_names[: artist_limit - len(artists)]]
     return {"songs": songs[:song_limit], "albums": albums, "artists": artists}
+
+
+async def suggest_library(query: str, limit: int = 6) -> dict:
+    """Minimal autocomplete payload for as-you-type search."""
+    q = (query or "").strip()
+    if not q:
+        return {"songs": [], "albums": [], "artists": []}
+    try:
+        from app.db.crud.search_engine import get_engine
+
+        engine = await get_engine()
+        if engine.songs:
+            return engine.suggest(q, limit=limit)
+    except Exception:
+        pass
+    songs = await search_songs(q, limit=limit)
+    return {
+        "songs": [
+            {"id": s.get("id"), "title": s.get("title"), "artist": s.get("artist")}
+            for s in songs
+        ],
+        "albums": [],
+        "artists": [],
+    }
