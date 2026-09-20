@@ -1,9 +1,15 @@
 import axios from 'axios';
 
+// Build-time override for deployed frontends:
+//   VITE_API_URL=https://<appsail-service-url> npm run build
+// Falls back to the localStorage host/port (self-hosted default).
+const BUILD_API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+
 const ip = localStorage.getItem('backend_ip') || 'localhost';
 const port = localStorage.getItem('backend_port') || '8000';
 
 const getBaseUrl = () => {
+    if (BUILD_API_URL) return BUILD_API_URL;
     let host = ip;
     // Remove trailing slash
     if (host.endsWith('/')) host = host.slice(0, -1);
@@ -162,6 +168,12 @@ export const getTelegramStatus = async () => {
 
 export const scanTelegramChannel = async (force = false) => {
     const response = await api.post('/telegram/scan', null, { params: { force } });
+    return response.data;
+};
+
+// Scan runs in the background (202 immediately); poll this until done.
+export const getScanStatus = async () => {
+    const response = await api.get('/telegram/scan/status');
     return response.data;
 };
 

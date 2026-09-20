@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from app.db.connection import telegram_state_collection
 from app.services.telegram import telegram_client, TelegramNotConfigured
@@ -6,6 +6,10 @@ from app.services.channel_indexer import scan_source_channel
 from app.services.artwork import debug_match, TransientStoreError
 
 router = APIRouter(prefix="/api/telegram", tags=["telegram"])
+
+# Long channel scans exceed gateway timeouts, so /scan returns 202
+# immediately and runs in the background; clients poll /scan/status.
+_scan_state: dict = {"running": False, "last": None}
 
 
 @router.get("/status")
@@ -20,21 +24,40 @@ async def telegram_status():
     }
 
 
-@router.post("/scan")
-async def telegram_scan(limit: int = 0, force: bool = False):
-    try:
-        result = await scan_source_channel(limit=limit, force=force)
-    except TelegramNotConfigured as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Scan failed: {e}")
-    try:
-        from app.api.routes.websocket import notify_update
+@router.post("/scan", status_code=202)
+async def telegram_scan(limit: int = 0, force: bool = False, background_tasks: BackgroundTasks = None):
+    if _scan_state["running"]:
+        return {"status": "running"}
+    _scan_state["running"] = True
 
-        await notify_update("library_updated")
-    except Exception:
-        pass
-    return {"status": "success", **result}
+    async def _run():
+        try:
+            _scan_state["last"] = await scan_source_channel(limit=limit, force=force)
+        except TelegramNotConfigured as e:
+            _scan_state["last"] = {"error": str(e)}
+        except Exception as e:
+            _scan_state["last"] = {"error": f"Scan failed: {e}"}
+        finally:
+            _scan_state["running"] = False
+        try:
+            from app.api.routes.websocket import notify_update
+
+            await notify_update("library_updated")
+        except Exception:
+            pass
+
+    if background_tasks is not None:
+        background_tasks.add_task(_run)
+    else:
+        import asyncio as _asyncio
+
+        _asyncio.create_task(_run())
+    return {"status": "started"}
+
+
+@router.get("/scan/status")
+async def telegram_scan_status():
+    return {"running": _scan_state["running"], "last": _scan_state["last"]}
 
 
 @router.get("/test-match")

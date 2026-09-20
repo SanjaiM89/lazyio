@@ -17,10 +17,10 @@ export default function NocturnePlayer({
   onToggle, onNext, onPrev, onSeek, onClose,
   queue = [], onPlay, suggestions = [],
   shuffle, setShuffle, repeat, setRepeat, onAdd,
+  autoplay = true, setAutoplay,
   hasVideo, mode, setMode, videoRef, audioRef,
 }) {
   const [tab, setTab] = useState('queue');
-  const [autoplay, setAutoplay] = useState(true);
   const [loved, setLoved] = useState(false);
   const wasAudioPlaying = useRef(false);
   const inVideo = mode === 'video' && hasVideo;
@@ -296,7 +296,7 @@ export default function NocturnePlayer({
                   <span className="font-body-sm text-body-sm text-outline">Similar songs will follow</span>
                 </div>
               </div>
-              <button onClick={() => setAutoplay(!autoplay)} className={`w-9 h-5 rounded-full p-0.5 flex transition-colors ${autoplay ? 'bg-primary-container justify-end' : 'bg-surface-container-highest justify-start'}`} type="button" title="Toggle Autoplay">
+              <button onClick={() => setAutoplay?.(!autoplay)} className={`w-9 h-5 rounded-full p-0.5 flex transition-colors ${autoplay ? 'bg-primary-container justify-end' : 'bg-surface-container-highest justify-start'}`} type="button" title="Toggle Autoplay">
                 <div className="w-4 h-4 rounded-full bg-white shadow-md" />
               </button>
             </div>

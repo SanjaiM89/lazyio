@@ -25,5 +25,6 @@ EXPOSE 8000
 # Signal that we are running on cloud (works for both Render and Fly.io)
 ENV CLOUD_DEPLOYMENT=true
 
-# Run the application
-CMD ["python", "main.py"]
+# Run the application (uvicorn serves app.main:app; PORT is injected
+# by the host: Render, Fly.io internal_port, or Catalyst AppSail --port)
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

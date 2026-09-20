@@ -1,0 +1,22 @@
+# Keep secrets, sessions, caches and local tooling out of the image
+BackEnd/config.env
+BackEnd/.env
+BackEnd/*.session
+BackEnd/*.session-journal
+BackEnd/venv/
+BackEnd/__pycache__/
+BackEnd/cache/
+BackEnd/temp_uploads/
+BackEnd/music.db
+FrontEnd/node_modules/
+FrontEnd/dist/
+mplay_mobile/
+mplay_mobile_backup/
+catalyst/
+catalyst-deploy/
+.git/
+.gitignore
+fly.toml
+docker-compose.yml
+*.tar
+*.tar.gz

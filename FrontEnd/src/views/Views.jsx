@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { getAlbums, getAlbum, getArtists, getArtist, getPlaylists, getPlaylist, createPlaylist, deletePlaylist, searchLibrary, getSongsPaginated, uploadSongs, deleteSong, scanTelegramChannel } from '../api';
+import { getAlbums, getAlbum, getArtists, getArtist, getPlaylists, getPlaylist, createPlaylist, deletePlaylist, searchLibrary, getSongsPaginated, uploadSongs, deleteSong, scanTelegramChannel, getScanStatus } from '../api';
 import { Icon, Cover, Badge, EmptyState, fmtTime } from '../components/ui';
 import { TrackTable, FilterBar, AlbumHero } from '../components/TrackTable';
 import { makeSongIndex, fuzzySongs, mergeSongs } from '../components/search';
@@ -113,7 +113,20 @@ export function AlbumsGridView({ onOpen, onAddAlbum }) {
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
   useEffect(() => { load(1); }, []);
-  const rescan = async () => { setScanning(true); try { await scanTelegramChannel(false); await load(1); } catch (e) { console.error(e); } finally { setScanning(false); } };
+  const rescan = async () => {
+    setScanning(true);
+    try {
+      await scanTelegramChannel(false); // 202: scan runs in background
+      for (let i = 0; i < 200; i++) { // poll up to ~10 min
+        await new Promise((r) => setTimeout(r, 3000));
+        try {
+          const st = await getScanStatus();
+          if (!st.running) break;
+        } catch { break; }
+      }
+      await load(1);
+    } catch (e) { console.error(e); } finally { setScanning(false); }
+  };
 
   return (
     <div className="flex flex-col gap-4 pt-20 pb-12 animate-fade-up">

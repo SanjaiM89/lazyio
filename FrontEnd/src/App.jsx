@@ -48,6 +48,8 @@ export default function App() {
   const [expanded, setExpanded] = useState(false);
   const [shuffle, setShuffle] = useState(false);
   const [repeat, setRepeat] = useState(false);
+  const [autoplay, setAutoplay] = useState(true);
+  const fetchingMore = useRef(false);
 
   // audio state
   const audioRef = useRef(null);
@@ -83,18 +85,31 @@ export default function App() {
 
   useEffect(() => {
     loadSongs(1); loadHome(); loadPlaylists();
-    let alive = true, ws = null, retry = 0, timer = null;
+    let alive = true, ws = null, retry = 0, timer = null, pollTimer = null;
+    const onLibraryUpdate = () => { loadSongs(1); loadHome(); };
+    const handleMessage = (raw) => {
+      // Server broadcasts JSON {"type": "library_updated"} (legacy plain string tolerated)
+      let type = raw;
+      try { const parsed = JSON.parse(raw); type = parsed.type || raw; } catch { /* plain string */ }
+      if (type === 'library_updated') onLibraryUpdate();
+    };
+    const startPolling = () => {
+      if (pollTimer || !alive) return;
+      console.log('Live updates unavailable (gateway blocks websockets) — polling every 45s');
+      pollTimer = setInterval(onLibraryUpdate, 45000);
+    };
     const connect = () => {
       if (!alive) return;
+      if (retry >= 6) { startPolling(); return; } // stop spamming a dead endpoint
       try { ws = new WebSocket(getWsUrl()); } catch { sched(); return; }
       ws.onopen = () => { retry = 0; };
-      ws.onmessage = (e) => { if (e.data === 'library_updated') { loadSongs(1); loadHome(); } };
+      ws.onmessage = (e) => handleMessage(e.data);
       ws.onerror = () => { try { ws.close(); } catch {} };
       ws.onclose = sched;
     };
     const sched = () => { if (!alive) return; retry += 1; clearTimeout(timer); timer = setTimeout(connect, Math.min(1000 * 2 ** Math.min(retry, 5), 30000)); };
     connect();
-    return () => { alive = false; clearTimeout(timer); try { ws?.close(); } catch {} };
+    return () => { alive = false; clearTimeout(timer); clearInterval(pollTimer); try { ws?.close(); } catch {} };
   }, []);
 
   // autoplay suggestions
@@ -126,15 +141,40 @@ export default function App() {
     setIsPlaying(true);
   }, [queue, songs]);
 
+  const stopAtEnd = () => { setIsPlaying(false); audioRef.current?.pause(); };
+
   const next = useCallback(() => {
     const q = queue.length ? queue : songs;
     if (!q.length) return;
-    let n;
-    if (shuffle) n = Math.floor(Math.random() * q.length);
-    else n = qi + 1 >= q.length ? (repeat ? 0 : qi) : qi + 1;
-    if (n === qi && !repeat && n === q.length - 1) { setIsPlaying(false); audioRef.current?.pause(); return; }
-    setQi(n); setCurrentSong(q[n]); setIsPlaying(true);
-  }, [queue, songs, qi, shuffle, repeat]);
+    const advance = (n) => {
+      if (!q[n]) { stopAtEnd(); return; }
+      setQi(n); setCurrentSong(q[n]); setIsPlaying(true);
+    };
+    if (shuffle) { advance(Math.floor(Math.random() * q.length)); return; }
+    if (qi + 1 < q.length) { advance(qi + 1); return; }
+    // End of queue
+    if (repeat) { advance(0); return; }
+    if (autoplay && currentSong && !fetchingMore.current) {
+      // Infinite autoplay: append similar songs and keep going (Spotify-style radio)
+      fetchingMore.current = true;
+      const seedId = currentSong.id;
+      const known = new Set(q.map((s) => s.id));
+      getSimilarSongs(seedId, 8).then((d) => {
+        const fresh = (d.similar || d.songs || []).filter((s) => s && s.id && s.id !== seedId && !known.has(s.id));
+        if (fresh.length) {
+          const at = q.length;
+          setQueue((prev) => {
+            const ids = new Set(prev.map((s) => s.id));
+            const add = fresh.filter((s) => !ids.has(s.id));
+            return add.length ? [...prev, ...add] : prev;
+          });
+          setQi(at); setCurrentSong(fresh[0]); setIsPlaying(true);
+        } else stopAtEnd();
+      }).catch(stopAtEnd).finally(() => { fetchingMore.current = false; });
+      return;
+    }
+    stopAtEnd();
+  }, [queue, songs, qi, shuffle, repeat, autoplay, currentSong]);
 
   const prev = useCallback(() => {
     const q = queue.length ? queue : songs;
@@ -220,6 +260,7 @@ export default function App() {
           onClose={() => setExpanded(false)} queue={queue} onPlay={(s) => play(s)}
           suggestions={suggestions}
           shuffle={shuffle} setShuffle={setShuffle} repeat={repeat} setRepeat={setRepeat}
+          autoplay={autoplay} setAutoplay={setAutoplay}
           onAdd={openAddSingle}
           hasVideo={hasVideo} mode={mode} setMode={setMode} videoRef={videoRef} audioRef={audioRef} formatTime={fmt}
         />
