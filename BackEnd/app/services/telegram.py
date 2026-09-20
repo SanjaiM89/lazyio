@@ -57,6 +57,10 @@ class TelegramClientWrapper:
         self.is_bot = False
         self._lock = asyncio.Lock()
         self._force_reconnect = False
+        # Set permanently when Telegram revokes the auth key (e.g. the same
+        # session string used from two IPs at once). Retrying is pointless —
+        # a fresh session string is required.
+        self.session_revoked = False
 
     @property
     def use_user_session(self) -> bool:
@@ -88,27 +92,37 @@ class TelegramClientWrapper:
 
     async def start(self):
         self._require_config()
+        if self.session_revoked:
+            raise TelegramNotConfigured(
+                "Telegram session was revoked (used from two IPs at once). "
+                "Generate a fresh string with: python generate_session.py"
+            )
         if self._client is not None and self._entity is not None:
             return self._client
         from telethon import TelegramClient
 
         api_id_int = int(str(self.api_id).strip())
-        if self.use_user_session:
-            from telethon.sessions import StringSession
+        try:
+            if self.use_user_session:
+                from telethon.sessions import StringSession
 
-            self._client = TelegramClient(
-                StringSession(str(self.session_string).strip()),
-                api_id_int,
-                str(self.api_hash).strip(),
-            )
-            await self._client.start()
-        else:
-            self._client = TelegramClient(
-                self.session_name, api_id_int, str(self.api_hash).strip()
-            )
-            await self._client.start(bot_token=str(self.bot_token).strip())
+                self._client = TelegramClient(
+                    StringSession(str(self.session_string).strip()),
+                    api_id_int,
+                    str(self.api_hash).strip(),
+                )
+                await self._client.start()
+            else:
+                self._client = TelegramClient(
+                    self.session_name, api_id_int, str(self.api_hash).strip()
+                )
+                await self._client.start(bot_token=str(self.bot_token).strip())
 
-        me = await self._client.get_me()
+            me = await self._client.get_me()
+        except Exception as e:
+            if self._is_revoked_error(e):
+                self._mark_revoked()
+            raise
         self.is_bot = bool(getattr(me, "bot", False))
         mode = "BOT (upload-only)" if self.is_bot else "USER (full access)"
         print(f"[TG] Connected as {getattr(me, 'first_name', '?')} [{mode}]")
@@ -191,11 +205,16 @@ class TelegramClientWrapper:
         handshake delay is felt as 'song takes forever to start')."""
         while True:
             await asyncio.sleep(interval_seconds)
+            if self.session_revoked:
+                return
             try:
                 if self._client is None:
                     continue
                 await self._client.get_me()
             except Exception as e:
+                if self._is_revoked_error(e):
+                    self._mark_revoked()
+                    return
                 if self._is_transport_error(e):
                     print(f"[TG] keepalive: dead socket detected, rebuilding now: {e}")
                     self._force_reconnect = True
@@ -236,7 +255,30 @@ class TelegramClientWrapper:
             await self.start()
             return self._client
 
+    @staticmethod
+    def _is_revoked_error(e: Exception) -> bool:
+        """Telegram permanently killed the auth key (same session from two
+        IPs at once). Retrying can never succeed — fail fast instead."""
+        msg = str(e).lower()
+        return (
+            "two different ip addresses" in msg
+            or "can no longer be used" in msg
+            or "auth_key_duplicated" in msg
+        )
+
+    def _mark_revoked(self):
+        if not self.session_revoked:
+            self.session_revoked = True
+            print(
+                "[TG] SESSION REVOKED by Telegram: this login was used from "
+                "two IPs at once and can never be used again. Generate a "
+                "fresh string (python generate_session.py) and set "
+                "TELEGRAM_SESSION_STRING. Retries stopped."
+            )
+
     def _is_transport_error(self, e: Exception) -> bool:
+        if self._is_revoked_error(e):
+            return False
         if isinstance(e, self._TRANSPORT_ERRORS):
             return True
         # Telethon wraps socket failures in plain ConnectionError with

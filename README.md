@@ -9,6 +9,7 @@
 *   **Premium UI**: Glassmorphism design inspired by Apple Music and Spotify.
 *   **Unlimited Storage**: Uses a Telegram channel as a robust backend for storing audio files (auto-indexed on startup).
 *   **AI Recommendations**: Integrated with **Mistral AI** to suggest *new* songs based on your listening history (deduplicated recommendations).
+*   **Synced Lyrics**: Line-by-line lyrics from [LRCLIB](https://lrclib.net) on web and mobile (Flutter) — auto-follow while playing and click-a-line-to-seek. Each track is looked up once and stored in MongoDB, so repeat plays never hit the lyrics service again.
 *   **Telegram Library**: Set `TELEGRAM_SOURCE_CHANNEL` in `.env` — the backend scans the channel, indexes tracks in MongoDB, and groups same-named music into albums/playlists.
 *   **Live Library**: Real-time updates across devices using WebSockets.
 *   **Playlist Management**: Create playlists, add/rename/delete songs with a native feel.

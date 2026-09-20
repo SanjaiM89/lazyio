@@ -52,6 +52,20 @@ class ApiService {
     await http.post(Uri.parse('${AppConfig.baseUrl}/api/songs/$songId/play'));
   }
 
+  // Lyrics (LRCLIB via the backend, which caches every track in MongoDB).
+  // Returns null when the track simply has no lyrics (HTTP 404).
+  static Future<Lyrics?> getLyrics(String songId, {bool refresh = false}) async {
+    final uri = Uri.parse(
+      '${AppConfig.baseUrl}/api/songs/$songId/lyrics${refresh ? '?refresh=true' : ''}',
+    );
+    final response = await http.get(uri);
+    if (response.statusCode == 200) {
+      return Lyrics.fromJson(json.decode(response.body) as Map<String, dynamic>);
+    }
+    if (response.statusCode == 404) return null;
+    throw Exception('Failed to load lyrics (${response.statusCode})');
+  }
+
   // Albums (grouped Telegram library)
 
   static Future<List<Album>> getAlbums({int page = 1, int limit = 20}) async {

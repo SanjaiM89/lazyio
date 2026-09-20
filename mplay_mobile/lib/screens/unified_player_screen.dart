@@ -11,6 +11,7 @@ import '../models.dart';
 
 import '../library_provider.dart';
 import '../services/video_cache_service.dart';
+import '../widgets/lyrics_view.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'dart:io';
 import 'dart:async';
@@ -921,34 +922,165 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
   }
 
   Widget _buildBottomBar() {
-    return GestureDetector(
-      onTap: _showQueueSheet,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: const BoxDecoration(
-          color: Colors.white10,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  "UP NEXT",
-                  style: TextStyle(color: Colors.white54, fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  "Tap to see queue",
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ],
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildBottomBarAction(
+              icon: Icons.queue_music,
+              title: "UP NEXT",
+              hint: "Tap to see queue",
+              onTap: _showQueueSheet,
             ),
-             Icon(Icons.keyboard_arrow_up, color: Colors.white54),
+          ),
+          Container(width: 1, height: 44, color: Colors.white12),
+          Expanded(
+            child: _buildBottomBarAction(
+              icon: Icons.lyrics_outlined,
+              title: "LYRICS",
+              hint: "Tap to view lyrics",
+              onTap: _showLyricsSheet,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomBarAction({
+    required IconData icon,
+    required String title,
+    required String hint,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.white54, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white54,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  Text(
+                    hint,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  void _showLyricsSheet() {
+    final isVideoMode = _mode == 1 && _videoController != null;
+    final videoController = _videoController;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.85,
+          minChildSize: 0.4,
+          maxChildSize: 0.95,
+          builder: (_, controller) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: kBackgroundColor,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const Text(
+                    "Lyrics",
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: _buildLyricsBody(
+                      isVideoMode: isVideoMode,
+                      videoController: videoController,
+                      controller: controller,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildLyricsBody({
+    required bool isVideoMode,
+    required VideoPlayerController? videoController,
+    required ScrollController controller,
+  }) {
+    if (isVideoMode && videoController != null) {
+      // Video mode keeps its own clock, so follow that while the sheet is open.
+      final player = videoController;
+      return ValueListenableBuilder<VideoPlayerValue>(
+        valueListenable: player,
+        builder: (context, value, child) => LyricsView(
+          song: widget.song,
+          position: value.position,
+          onSeek: (position) {
+            player.seekTo(position);
+          },
+          scrollController: controller,
+        ),
+      );
+    }
+    return Consumer<MusicProvider>(
+      builder: (context, music, child) {
+        // Follow auto-advance: lyrics reload when the next song starts.
+        final song = music.currentSong ?? widget.song;
+        return LyricsView(
+          key: ValueKey(song.id),
+          song: song,
+          position: music.position,
+          onSeek: (position) {
+            music.seek(position);
+          },
+          scrollController: controller,
+        );
+      },
     );
   }
 
@@ -1090,6 +1222,14 @@ class _UnifiedPlayerScreenState extends State<UnifiedPlayerScreen>
               ),
             ),
             const Divider(color: Colors.white10),
+            ListTile(
+              leading: const Icon(Icons.lyrics_outlined, color: kPrimaryColor),
+              title: const Text("View Lyrics", style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _showLyricsSheet();
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.auto_awesome, color: Colors.purpleAccent),
               title: const Text("Find Similar Songs", style: TextStyle(color: Colors.white)),

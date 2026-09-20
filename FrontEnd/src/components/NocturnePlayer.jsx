@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Icon, Cover } from './ui';
 import { getVideoStreamUrl } from '../api';
+import LyricsPane from './LyricsPane';
 
 const fmtClock = (s) => {
   if (s == null || isNaN(s)) return '0:00';
@@ -14,7 +15,7 @@ const fmtLeft = (progress, duration) => {
 
 export default function NocturnePlayer({
   song, isPlaying, progress, duration, volume, setVolume,
-  onToggle, onNext, onPrev, onSeek, onClose,
+  onToggle, onNext, onPrev, onSeek, onSeekTo, onClose,
   queue = [], onPlay, suggestions = [],
   shuffle, setShuffle, repeat, setRepeat, onAdd,
   autoplay = true, setAutoplay,
@@ -24,6 +25,12 @@ export default function NocturnePlayer({
   const [loved, setLoved] = useState(false);
   const wasAudioPlaying = useRef(false);
   const inVideo = mode === 'video' && hasVideo;
+
+  // Seconds-based seek for the lyrics pane (tap a line to jump to it).
+  const seekToSeconds = (t) => {
+    if (typeof onSeekTo === 'function') onSeekTo(t);
+    else if (typeof onSeek === 'function') onSeek({ target: { value: t } });
+  };
 
   // Entering video mode pauses shared audio; leaving restores position.
   useEffect(() => {
@@ -267,10 +274,13 @@ export default function NocturnePlayer({
 
             <div className="flex-1 min-h-0 overflow-y-auto custom-scroll p-space-sm space-y-1 max-h-[60vh] lg:max-h-none">
               {tab === 'lyrics' && (
-                <div className="p-space-md rounded-xl bg-surface-container text-center">
-                  <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline block mb-2">Lyrics</span>
-                  <p className="font-body-md text-body-md text-on-surface-variant">Synced lyrics aren&apos;t available for “{song.title}” yet — enjoy the lossless stream.</p>
-                </div>
+                <LyricsPane
+                  song={song}
+                  progress={progress}
+                  onSeekTo={seekToSeconds}
+                  variant="full"
+                  className="h-full min-h-[320px]"
+                />
               )}
               {tab === 'related' && (
                 suggestions.length === 0 ? (

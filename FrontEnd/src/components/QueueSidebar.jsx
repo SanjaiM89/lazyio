@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Icon, Cover } from './ui';
 import { fmtTime } from './ui';
+import LyricsPane from './LyricsPane';
 
 export function Equalizer({ size = 'md' }) {
   return (
@@ -16,7 +17,7 @@ export function Equalizer({ size = 'md' }) {
   );
 }
 
-export default function QueueSidebar({ currentSong, queue = [], suggestions = [], onPlay, tab, setTab, isPlaying }) {
+export default function QueueSidebar({ currentSong, queue = [], suggestions = [], onPlay, tab, setTab, isPlaying, progress = 0, onSeekTo }) {
   return (
     <aside className="fixed right-0 top-0 bottom-0 w-80 bg-surface-container-low/80 backdrop-blur-xl z-30 flex flex-col p-space-md pb-28">
       <div className="flex items-center justify-between pb-space-md">
@@ -109,10 +110,13 @@ export default function QueueSidebar({ currentSong, queue = [], suggestions = []
         )}
 
         {tab === 'lyrics' && (
-          <div className="p-space-md rounded-xl bg-surface-container">
-            <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline block mb-2">Lyrics</span>
-            <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">Lyrics aren&apos;t available for this track yet. Enjoy the lossless stream.</p>
-          </div>
+          <LyricsPane
+            song={currentSong}
+            progress={progress}
+            onSeekTo={onSeekTo}
+            variant="sidebar"
+            className="h-full min-h-[240px]"
+          />
         )}
 
         {tab === 'related' && (

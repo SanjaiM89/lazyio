@@ -68,6 +68,14 @@ async def lifespan(app: FastAPI):
             print(f"[STARTUP] Index ensure warning: {e}")
 
         try:
+            from app.db.crud.lyrics import ensure_lyrics_indexes
+
+            await ensure_lyrics_indexes()
+            print("[STARTUP] Lyrics indexes ensured")
+        except Exception as e:
+            print(f"[STARTUP] Lyrics index warning: {e}")
+
+        try:
             print("[STARTUP] Starting Telegram indexer...")
             from app.services.telegram import telegram_client
 

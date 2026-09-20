@@ -238,3 +238,87 @@ class Playlist {
     );
   }
 }
+
+
+class LyricsLine {
+  final double time; // seconds from the start of the track
+  final String text;
+
+  LyricsLine({required this.time, required this.text});
+
+  factory LyricsLine.fromJson(Map<String, dynamic> json) {
+    return LyricsLine(
+      time: (json['time'] as num?)?.toDouble() ?? 0,
+      text: (json['text'] ?? '').toString(),
+    );
+  }
+}
+
+/// Lyrics for one song as returned by `GET /api/songs/{id}/lyrics`.
+///
+/// The backend fetches each track once (LRCLIB) and stores it in MongoDB, so
+/// opening the lyrics sheet again never re-queries the lyrics service.
+class Lyrics {
+  final bool instrumental;
+  final bool synced;
+  final String source;
+  final List<LyricsLine> lines;
+  final String plain;
+  final String? matchedTitle;
+  final String? matchedArtist;
+
+  Lyrics({
+    required this.instrumental,
+    required this.synced,
+    required this.source,
+    required this.lines,
+    required this.plain,
+    this.matchedTitle,
+    this.matchedArtist,
+  });
+
+  bool get hasLines => lines.isNotEmpty;
+  bool get hasPlain => plain.trim().isNotEmpty;
+
+  factory Lyrics.fromJson(Map<String, dynamic> json) {
+    final rawLines = json['lines'];
+    final matched = json['matched'] is Map ? json['matched'] as Map : const {};
+    final List<LyricsLine> parsed = rawLines is List
+        ? rawLines
+            .whereType<Map>()
+            .map((line) => LyricsLine.fromJson(Map<String, dynamic>.from(line)))
+            .toList()
+        : <LyricsLine>[];
+    return Lyrics(
+      instrumental: json['instrumental'] == true,
+      synced: json['synced'] == true,
+      source: (json['source'] ?? 'lrclib').toString(),
+      lines: parsed,
+      plain: (json['plain'] ?? '').toString(),
+      matchedTitle: matched['title']?.toString(),
+      matchedArtist: matched['artist']?.toString(),
+    );
+  }
+
+  /// Index of the line that should be highlighted at [position].
+  ///
+  /// Returns -1 before the first timestamp (intros).
+  int activeIndex(Duration position) {
+    if (lines.isEmpty) return -1;
+    final seconds = position.inMilliseconds / 1000.0 + 0.2;
+    var low = 0;
+    var high = lines.length - 1;
+    var found = -1;
+    while (low <= high) {
+      final mid = (low + high) >> 1;
+      if (lines[mid].time <= seconds) {
+        found = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return found;
+  }
+}
+

@@ -194,6 +194,19 @@ export const recordPlay = async (songId) => {
     return response.data;
 };
 
+// Lyrics (LRCLIB via backend). 404 means the track simply has no lyrics.
+export const getLyrics = async (songId, refresh = false) => {
+    try {
+        const response = await api.get(`/songs/${songId}/lyrics`, {
+            params: refresh ? { refresh: true } : {},
+        });
+        return response.data;
+    } catch (error) {
+        if (error.response?.status === 404) return null;
+        throw error;
+    }
+};
+
 // ==================== Playlists ====================
 
 export const getPlaylists = async (page = 1, limit = 10) => {

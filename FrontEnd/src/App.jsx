@@ -198,6 +198,13 @@ export default function App() {
   };
   const onSeek = (e) => { const t = parseFloat(e.target.value); if (audioRef.current) { audioRef.current.currentTime = t; setProgress(t); } };
 
+  // Seconds-based seek for the lyrics pane (click a line to jump to it).
+  const seekTo = (t) => {
+    if (!audioRef.current || !isFinite(t)) return;
+    audioRef.current.currentTime = t;
+    setProgress(t);
+  };
+
   const openAddSingle = (song) => { setModalSong(song); setModalIds(null); setModalOpen(true); };
   const openAddAlbum = (album) => {
     const ids = (album.songs || []).map((s) => s.id).filter(Boolean);
@@ -226,6 +233,7 @@ export default function App() {
         currentSong={currentSong} queue={queue.slice(Math.max(0, qi + 1)).concat(queue.slice(0, Math.max(0, qi + 1)).length ? [] : [])}
         suggestions={suggestions} onPlay={(s) => play(s)}
         tab={qtab} setTab={setQtab} isPlaying={isPlaying}
+        progress={progress} onSeekTo={seekTo}
       />
       <div className="pl-64 pr-80 min-h-screen flex flex-col">
         <Header view={view} onNavigate={navigate} onBack={back} onForward={fwd} />
@@ -257,6 +265,7 @@ export default function App() {
           song={currentSong} isPlaying={isPlaying} progress={progress} duration={duration}
           volume={volume} setVolume={setVolume}
           onToggle={toggle} onNext={next} onPrev={prev} onSeek={onSeek}
+          onSeekTo={seekTo}
           onClose={() => setExpanded(false)} queue={queue} onPlay={(s) => play(s)}
           suggestions={suggestions}
           shuffle={shuffle} setShuffle={setShuffle} repeat={repeat} setRepeat={setRepeat}
