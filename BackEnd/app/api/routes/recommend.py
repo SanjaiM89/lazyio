@@ -17,7 +17,7 @@ from app.db.crud.app_playlists import (
     get_playlist_with_songs,
     create_app_playlist,
 )
-from app.ai.recommender import audio_recommender
+from app.services.reco import get_hybrid_similar
 from app.ai.mistral import (
     get_music_recommendations,
     get_recommendations,
@@ -109,14 +109,27 @@ async def api_scan_audio_features(background_tasks: BackgroundTasks):
 
 
 @router.get("/api/recommend/similar/{song_id}")
-async def api_recommend_similar(song_id: str, limit: int = 10):
-    similar_ids = audio_recommender.find_similar(song_id, limit)
-    songs = []
-    for sid in similar_ids:
-        s = await get_song_by_id(sid)
-        if s:
-            songs.append(s)
-    return {"similar_songs": songs}
+async def api_recommend_similar(song_id: str, limit: int = 10,
+                                same_language: bool = True,
+                                explain: bool = False):
+    """Hybrid recommendations: FAISS audio similarity (content) blended
+    with next-track co-occurrence (behavior), plus affinity boosts.
+
+    Falls back to pure content-based results for cold-start tracks.
+    """
+    from app.db.crud.profile import get_profile
+
+    profile = await get_profile()
+    songs = await get_hybrid_similar(
+        song_id, limit=max(1, min(limit, 50)), same_language=same_language,
+        affinity={"languages": profile.get("languages", {}),
+                  "genres": profile.get("genres", {})},
+    )
+    if not explain:
+        songs = [{k: v for k, v in s.items() if k != "reco_score"} for s in songs]
+    # `similar_songs` is the historic key; `similar`/`songs` aliases keep
+    # the Qt desktop client (which reads those keys) working.
+    return {"similar_songs": songs, "similar": songs, "songs": songs}
 
 
 @router.post("/api/songs/{song_id}/like")
@@ -277,6 +290,8 @@ class SignalRequest(BaseModel):
 
 @router.post("/api/ai-queue/signal/{song_id}")
 async def api_queue_signal(song_id: str, request: SignalRequest):
+    from app.db.crud.profile import update_affinity
+
     signal_type = request.signal_type
     duration = request.duration_seconds
 
@@ -288,11 +303,23 @@ async def api_queue_signal(song_id: str, request: SignalRequest):
         await db_mark_played(song_id)
     elif signal_type == "skip":
         await db_mark_played(song_id)
+        await update_affinity(song_id, -0.5)
     elif signal_type == "like":
         await like_song(song_id)
+        await update_affinity(song_id, 2.0)
     elif signal_type == "dislike":
         await dislike_song(song_id)
         await db_mark_played(song_id)
+        await update_affinity(song_id, -2.0)
+    if signal_type == "listen":
+        from app.db.crud.profile import weight_for_completion
+
+        try:
+            total = float(song.get("duration") or 0)
+            pct = (duration / total) if total > 0 else (1.0 if duration >= 60 else 0.0)
+            await update_affinity(song_id, weight_for_completion(pct))
+        except Exception:
+            pass
 
     await refill_queue_if_needed(min_songs=10)
     return {"status": "processed", "signal": signal_type, "song_id": song_id}
@@ -314,7 +341,6 @@ async def api_get_app_playlist(playlist_id: str):
 class GeneratePlaylistRequest(BaseModel):
     name: str = "New Mix"
 
-
 @router.post("/api/app-playlists/generate")
 async def api_generate_app_playlist(request: GeneratePlaylistRequest):
     all_songs = await get_all_songs()
@@ -332,3 +358,32 @@ async def api_generate_app_playlist(request: GeneratePlaylistRequest):
     )
 
     return {"status": "created", "id": playlist_id, "count": len(song_ids)}
+
+
+@router.get("/api/profile")
+async def api_get_profile():
+    """Taste profile: language/genre affinities, highest first."""
+    from app.db.crud.profile import get_profile
+
+    profile = await get_profile()
+    langs = sorted(profile.get("languages", {}).items(), key=lambda kv: -kv[1])
+    genres = sorted(profile.get("genres", {}).items(), key=lambda kv: -kv[1])
+    return {
+        "languages": [{"name": k, "weight": v} for k, v in langs],
+        "genres": [{"name": k, "weight": v} for k, v in genres],
+        "updated_at": str(profile.get("updated_at")) if profile.get("updated_at") else None,
+    }
+
+
+class DecayRequest(BaseModel):
+    rate: float = 0.9
+
+
+@router.post("/api/admin/decay-profiles")
+async def api_decay_profiles(request: DecayRequest):
+    """Manually run taste decay (the weekly job does this automatically)."""
+    from app.db.crud.profile import decay_profiles
+
+    rate = max(0.0, min(1.0, float(request.rate)))
+    modified = await decay_profiles(rate)
+    return {"status": "decayed", "rate": rate, "profiles_touched": modified}

@@ -1,10 +1,11 @@
 import os
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks
 from typing import List
 
 from app.api.routes.websocket import notify_update
 from app.services.metadata import extract_metadata
 from app.services.telegram import telegram_client
+from app.services.analysis_jobs import analyze_local_file
 from app.db.crud.songs import add_song
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
@@ -13,7 +14,9 @@ TEMP_UPLOAD_DIR = "temp_uploads"
 
 
 @router.post("")
-async def upload_files(files: List[UploadFile] = File(...)):
+async def upload_files(
+    files: List[UploadFile] = File(...), background_tasks: BackgroundTasks = None
+):
     """Upload audio/video files straight to the Telegram source channel."""
     if not os.path.exists(TEMP_UPLOAD_DIR):
         os.makedirs(TEMP_UPLOAD_DIR)
@@ -98,7 +101,13 @@ async def upload_files(files: List[UploadFile] = File(...)):
             )
             uploaded_songs.append({"id": song_id, "file_name": file_name})
 
-            if os.path.exists(file_path):
+            # Analyze in the background (descriptors + similarity vector),
+            # then delete the temp file. Falls back to immediate delete.
+            if background_tasks is not None:
+                background_tasks.add_task(
+                    analyze_local_file, song_id, file_path, True
+                )
+            elif os.path.exists(file_path):
                 os.remove(file_path)
         except Exception as e:
             print(f"[UPLOAD] Error processing {file_name}: {e}")

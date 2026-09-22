@@ -322,7 +322,7 @@ export function PlaylistsView({ onPlay, currentId, onMenu, openSignal, onOpened 
 }
 
 /* ---------------- SEARCH ---------------- */
-export function SearchView({ query, songs: librarySongs = [], onPlay, currentId, onMenu, onOpenAlbum, onOpenArtist }) {
+export function SearchView({ query, songs: librarySongs = [], onPlay, currentId, onMenu, onOpenAlbum, onOpenArtist, onPickLanguage }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -347,6 +347,17 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
   const fallback = useMemo(() => fuzzySongs(index, query, 10), [index, query]);
   const allSongs = mergeSongs(data?.songs, fallback);
   const total = allSongs.length + (data?.albums?.length || 0) + (data?.artists?.length || 0);
+  const langFilter = data?.language_filter || null;
+  const resultLangs = useMemo(() => {
+    const langs = [];
+    for (const s of allSongs) {
+      if (s.language && !langs.includes(s.language)) langs.push(s.language);
+    }
+    for (const a of data?.artists || []) {
+      if (a.language && !langs.includes(a.language)) langs.push(a.language);
+    }
+    return langs.slice(0, 8);
+  }, [allSongs, data]);
   return (
     <div className="flex flex-col gap-4 pt-20 pb-12 animate-fade-up">
       <div>
@@ -354,7 +365,21 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
         {data && !loading && (
           <p className="font-body-sm text-body-sm text-outline mt-1">
             Found {allSongs.length} song{allSongs.length !== 1 ? 's' : ''}, {data.albums?.length || 0} albums, {data.artists?.length || 0} artists
+            {langFilter ? ` • ${langFilter} only` : ''}
           </p>
+        )}
+        {(langFilter || resultLangs.length > 1) && (
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {langFilter ? (
+              <button onClick={() => onPickLanguage?.('')} className="h-8 px-3 rounded-full bg-primary-container text-on-primary-container font-label-md text-label-md flex items-center gap-1.5" type="button">
+                {langFilter} only <Icon name="close" size={14} />
+              </button>
+            ) : resultLangs.map((l) => (
+              <button key={l} onClick={() => onPickLanguage?.(l)} className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-on-surface font-label-md text-label-md transition-colors" type="button">
+                {l}
+              </button>
+            ))}
+          </div>
         )}
       </div>
       {loading && <div className="flex justify-center py-16"><div className="w-10 h-10 rounded-full border-4 border-primary/30 border-t-primary animate-spin" /></div>}

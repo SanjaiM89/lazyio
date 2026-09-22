@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Icon, Cover } from './ui';
+import { Icon, Cover, SongBadges } from './ui';
 import { getVideoStreamUrl } from '../api';
 import LyricsPane from './LyricsPane';
 
@@ -182,6 +182,7 @@ export default function NocturnePlayer({
               <p className="font-body-sm text-body-sm text-outline uppercase tracking-wider truncate">
                 {song.album || 'Single'} <span className="mx-1">•</span> {song.year || ''} {song.year ? <span className="mx-1">•</span> : null} Lossless
               </p>
+              <SongBadges song={song} className="justify-center mt-2" />
               <div className="flex items-center justify-center gap-space-sm mt-space-sm">
                 <button onClick={() => setLoved(!loved)} className={`w-10 h-10 rounded-full flex items-center justify-center backdrop-blur-md transition-colors ${loved ? 'bg-primary-container text-on-primary-container' : 'bg-white/[0.08] hover:bg-white/[0.14] text-on-surface'}`} title="Add to Favorites" type="button">
                   <Icon name="favorite" size={18} fill={loved} className={loved ? '' : 'text-tertiary'} />

@@ -129,6 +129,8 @@ def song_helper(song) -> dict:
         "album_key": song.get("album_key"),
         "year": song.get("year"),
         "genre": song.get("genre"),
+        "language": song.get("language"),
+        "language_source": song.get("language_source", "auto"),
         "play_count": song.get("play_count", 0),
         "meta_checked": song.get("meta_checked", False),
         "meta_match": song.get("meta_match", False),
@@ -140,6 +142,23 @@ def song_helper(song) -> dict:
         "mime_type": song.get("mime_type"),
         "media_type": media_type,
         "source_channel": song.get("source_channel"),
+        **_audio_payload(song),
+    }
+
+
+def _audio_payload(song: dict) -> dict:
+    """Flat Spotify-style descriptors for clients (badges, filters)."""
+    audio = song.get("audio") or {}
+    instrumentalness = audio.get("instrumentalness", 0.0) or 0.0
+    return {
+        "bpm": audio.get("bpm"),
+        "instrumentalness": instrumentalness,
+        "is_instrumental": bool(audio.get("is_instrumental", instrumentalness > 0.7)),
+        "lofi_score": audio.get("lofi_score", 0.0) or 0.0,
+        "is_lofi": bool(audio.get("is_lofi", False)),
+        "energy": audio.get("energy"),
+        "valence": audio.get("valence"),
+        "analyzed": bool(audio),
     }
 
 
@@ -201,6 +220,9 @@ async def add_song(
             {"$or": [{"file_name": file_name}, {"title": title, "artist": artist}]}
         )
     album_key = album_key_for(title, artist, album)
+    from app.services.language import detect_language as _detect_lang
+
+    auto_lang, _ = _detect_lang(title, artist, album, genre)
     if existing:
         updates = {"album_key": album_key}
         if s3_audio_key:
@@ -247,6 +269,16 @@ async def add_song(
             updates["meta_match"] = meta_match
         if has_video:
             updates["has_video"] = True
+        # Fill language when missing (never clobber a manual label).
+        if auto_lang and not existing.get("language"):
+            updates["language"] = auto_lang
+            updates["language_source"] = "auto"
+            try:
+                from app.db.crud.search_engine import mark_search_index_dirty
+
+                mark_search_index_dirty()
+            except Exception:
+                pass
         await songs_collection.update_one({"_id": existing["_id"]}, {"$set": updates})
         await upsert_album_for_song({**existing, **updates})
         return str(existing["_id"])
@@ -269,6 +301,8 @@ async def add_song(
         "source_channel": source_channel,
         "year": year,
         "genre": genre,
+        "language": auto_lang,
+        "language_source": "auto",
         "play_count": 0,
         "meta_checked": meta_checked,
         "meta_match": meta_match,
@@ -403,7 +437,7 @@ async def get_song_by_telegram_id(message_id: int) -> dict | None:
         return None
 
 
-async def search_songs(query: str, limit: int = 50):
+async def search_songs(query: str, limit: int = 50, language: str = None):
     """Fast path first: in-memory index (inverted postings + typo tolerance
     + personalized ranking). Falls back to Mongo regex + difflib when the
     index is unavailable, so search never hard-fails.
@@ -416,10 +450,15 @@ async def search_songs(query: str, limit: int = 50):
 
         engine = await get_engine()
         if engine.songs:
-            return engine.search_songs(q, limit=limit)
+            return engine.search_songs(q, limit=limit, language=language)
     except Exception:
         pass
-    return await _search_songs_mongo(q, limit)
+    results = await _search_songs_mongo(q, limit * (3 if language else 1))
+    if language:
+        from app.services.language import normalize_language
+
+        results = [s for s in results if normalize_language(s.get("language")) == language]
+    return results[:limit]
 
 
 async def _search_songs_mongo(query: str, limit: int = 50):
@@ -529,17 +568,52 @@ def _match_score(query: str, *fields: str | None) -> float:
 
 
 async def get_all_vectors() -> dict:
+    """19-dim librosa vectors for the FAISS index (legacy rows skipped)."""
+    from app.services.audio_analysis import VECTOR_DIM
+
     vectors = {}
-    async for song in songs_collection.find({"audio_features": {"$exists": True}}):
-        if song.get("audio_features"):
-            vectors[str(song["_id"])] = song["audio_features"]
+    async for song in songs_collection.find({"audio_vector": {"$exists": True}}):
+        vec = song.get("audio_vector")
+        if vec and len(vec) == VECTOR_DIM:
+            vectors[str(song["_id"])] = vec
     return vectors
+
+
+async def save_song_audio(song_id: str, audio: dict, vector: list):
+    """Persist Spotify-style analysis + similarity vector for a song."""
+    from app.services.audio_analysis import VECTOR_DIM
+
+    if vector and len(vector) != VECTOR_DIM:
+        vector = None
+    await songs_collection.update_one(
+        {"_id": ObjectId(song_id)},
+        {"$set": {"audio": audio, "audio_vector": vector}},
+    )
 
 
 async def update_song_features(song_id: str, features: list):
     await songs_collection.update_one(
         {"_id": ObjectId(song_id)}, {"$set": {"audio_features": features}}
     )
+
+
+async def set_song_language(song_id: str, language: str, source: str = "manual") -> bool:
+    """Set (or clear, with language=None) a song's language label."""
+    from app.services.language import normalize_language
+
+    lang = normalize_language(language) if language else None
+    try:
+        res = await songs_collection.update_one(
+            {"_id": ObjectId(song_id)},
+            {"$set": {"language": lang, "language_source": source}},
+        )
+        if res.modified_count:
+            from app.db.crud.search_engine import mark_search_index_dirty
+
+            mark_search_index_dirty()
+        return res.matched_count > 0
+    except Exception:
+        return False
 
 
 async def delete_song(song_id: str) -> bool:
@@ -832,7 +906,10 @@ async def search_library(
     song_limit = max(1, min(song_limit, 50))
     album_limit = max(1, min(album_limit, 50))
     artist_limit = max(1, min(artist_limit, 50))
-    songs = await search_songs(q, limit=song_limit)
+    from app.services.language import parse_language_intent
+
+    lang = parse_language_intent(q)
+    songs = await search_songs(q, limit=song_limit, language=lang)
     # Fast path: albums + artists from the in-memory index (no extra
     # queries, no cover-API calls). Falls through to Mongo on any failure.
     try:
@@ -843,7 +920,8 @@ async def search_library(
             return {
                 "songs": songs[:song_limit],
                 "albums": engine.search_albums(q, limit=album_limit),
-                "artists": engine.search_artists(q, limit=artist_limit),
+                "artists": engine.search_artists(q, limit=artist_limit, language=lang),
+                "language_filter": lang,
             }
     except Exception:
         pass
@@ -909,10 +987,11 @@ async def suggest_library(query: str, limit: int = 6) -> dict:
         return {"songs": [], "albums": [], "artists": []}
     try:
         from app.db.crud.search_engine import get_engine
+        from app.services.language import parse_language_intent
 
         engine = await get_engine()
         if engine.songs:
-            return engine.suggest(q, limit=limit)
+            return engine.suggest(q, limit=limit, language=parse_language_intent(q))
     except Exception:
         pass
     songs = await search_songs(q, limit=limit)

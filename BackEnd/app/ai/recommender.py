@@ -1,109 +1,58 @@
-import os
+"""Content-based similarity for Lazyio (Phase 1).
+
+Vectors are 19-dim librosa descriptors (see app.services.audio_analysis):
+``[bpm/200, danceability, energy, instrumentalness, lofi, valence]`` plus
+13 mean MFCCs. Indexed in-process with FAISS; persisted per song in Mongo
+(``audio_vector``) and reloaded at startup (see ``app/main.py``).
+
+All heavy dependencies are optional: without numpy/librosa/faiss the
+module loads fine and every lookup degrades to ``[]``.
+"""
+
 import asyncio
-from typing import List, Dict, Tuple
 import logging
+import os
+from typing import List
 
 logger = logging.getLogger("AudioRecommender")
 
 try:
     import numpy as np
     import faiss
-    import essentia.standard as es
+    from app.services.audio_analysis import (
+        analyze_file,
+        features_to_vector,
+        VECTOR_DIM,
+        ANALYZER_VERSION,
+    )
 
     DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Audio Recommendation dependencies missing: {e}. Feature disabled.")
     DEPENDENCIES_AVAILABLE = False
-
-# Path to store the FAISS index
-INDEX_PATH = "audio_features.index"
+    VECTOR_DIM = 19
+    ANALYZER_VERSION = "librosa-v1"
 
 
 class AudioRecommender:
     def __init__(self):
         self.index = None
-        self.map_id_to_vector = {}  # In-memory map for quick lookups
-        self.map_index_to_song_id = {}  # Map faiss index ID to song ID
+        self.map_id_to_vector = {}  # song_id -> vector (in-memory lookups)
+        self.map_index_to_song_id = {}  # faiss row -> song ID
         self.dimension = 0
         if not DEPENDENCIES_AVAILABLE:
             logger.warning("AudioRecommender initialized but dependencies are missing.")
 
-    def _extract_features(self, file_path: str) -> List[float]:
+    def _extract_features(self, file_path: str):
+        """19-dim vector for an audio file, or None."""
         if not DEPENDENCIES_AVAILABLE:
             return None
-
-        """
-        Extracts audio features using Essentia.
-        Returns a normalized vector combining:
-        - BPM (Tempo)
-        - Danceability
-        - Energy (RMS)
-        - Key/Scale (Tonal)
-        """
         try:
-            # We use the 'MusicExtractor' for a high-level analysis
-            # But for speed, we'll use specific extractors
-
-            # Load audio (downsample to 22k for speed, mono)
-            loader = es.MonoLoader(filename=file_path, sampleRate=22050)
-            audio = loader()
-
-            # 1. Rhyhtm / Tempo (using Essentia which is imported as es)
-            rhythm_extractor = es.RhythmExtractor2013(method="multifeature")
-            bpm, _, _, _, _ = rhythm_extractor(audio)
-
-            # 2. Key / Scale
-            # key_extractor = es.KeyExtractor()
-            # key, scale, strength = key_extractor(audio)
-
-            # 3. Energy / Intensity (RMS)
-            rms = es.RMS()(audio)
-            energy = np.mean(rms)
-
-            # 4. Danceability
-            danceability, _ = es.Danceability()(audio)
-
-            # 5. Spectral Features (Timbre)
-            # MFCCs are great for "timbre" similarity
-            w = es.Windowing(type="hann")
-            spectrum = es.Spectrum()
-            mfcc = es.MFCC()
-
-            mfccs = []
-            # Analyze first 30 seconds only for speed/consistency
-            limit_samples = min(len(audio), 22050 * 30)
-            for frame in es.FrameGenerator(
-                audio[:limit_samples], frameSize=1024, hopSize=512, startFromZero=True
-            ):
-                mfcc_bands, mfcc_coeffs = mfcc(spectrum(w(frame)))
-                mfccs.append(mfcc_coeffs)
-
-            avg_mfcc = np.mean(mfccs, axis=0)  # vector of 13 floats usually
-
-            # Construct final vector
-            # Normalize reasonably: BPM/200, Energy*10, Danceability, MFCCs (normalized)
-
-            # Simple feature vector: [BPM, Danceability, Energy] + MFCCs
-            # We verify the shapes:
-            # BPM: scalar
-            # Danceability: scalar (0-1 approx)
-            # Energy: scalar (0-1 approx)
-            # MFCC: 13 dim array
-
-            features = np.array(
-                [
-                    bpm / 200.0,  # Normalize BPM roughly 0-1
-                    danceability,  # Already 0-1
-                    min(energy * 10, 1.0),  # Boost and clip energy
-                ],
-                dtype=np.float32,
-            )
-
-            # Concatenate MFCCs (normalize them too slightly)
-            features = np.concatenate((features, avg_mfcc / 100.0))
-
-            return features.astype("float32")  # Return as numpy array internally
-
+            features = analyze_file(file_path)
+            if not features:
+                return None
+            vec = features_to_vector(features)
+            return np.array(vec, dtype="float32")
         except Exception as e:
             print(f"[AudioRecommender] Extraction error for {file_path}: {e}")
             return None
@@ -126,6 +75,14 @@ class AudioRecommender:
 
         if self.index is None:
             self.initialize_index(np_vector.shape[1])
+
+        # Guard against dimension drift (e.g. legacy 16-dim rows).
+        if np_vector.shape[1] != self.dimension:
+            logger.warning(
+                f"Skipping vector for {song_id}: dim {np_vector.shape[1]} "
+                f"!= index dim {self.dimension}"
+            )
+            return
 
         # Add to FAISS
         self.index.add(np_vector)

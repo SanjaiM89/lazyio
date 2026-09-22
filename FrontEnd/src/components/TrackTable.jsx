@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon, Badge, fmtTime } from './ui';
+import { Icon, Badge, SongBadges, fmtTime } from './ui';
 
 export function TrackTable({ tracks = [], currentId, onPlay, onMenu, filter = '' }) {
   const q = filter.trim().toLowerCase();
@@ -35,12 +35,15 @@ export function TrackTable({ tracks = [], currentId, onPlay, onMenu, filter = ''
                 </>
               )}
             </div>
-            <div className="flex items-center gap-space-sm min-w-0 pr-space-md">
-              <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? 'bg-primary' : 'bg-transparent'}`} />
-              <span className={`font-body-lg text-body-lg truncate ${active ? 'text-primary font-semibold' : 'text-on-surface font-medium'}`}>
-                {song.title || 'Unknown'}
-              </span>
-              {active && <span className="px-1.5 rounded bg-surface-container-highest text-primary font-label-sm text-label-sm">NOW</span>}
+            <div className="flex flex-col min-w-0 pr-space-md">
+              <div className="flex items-center gap-space-sm min-w-0">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${active ? 'bg-primary' : 'bg-transparent'}`} />
+                <span className={`font-body-lg text-body-lg truncate ${active ? 'text-primary font-semibold' : 'text-on-surface font-medium'}`}>
+                  {song.title || 'Unknown'}
+                </span>
+                {active && <span className="px-1.5 rounded bg-surface-container-highest text-primary font-label-sm text-label-sm">NOW</span>}
+              </div>
+              <SongBadges song={song} compact className="ml-3.5 mt-0.5" />
             </div>
             <div className="text-right pr-2 truncate">
               <span className={`px-2 py-0.5 rounded bg-surface-container font-label-sm text-label-sm font-mono truncate ${active ? 'text-primary' : 'text-on-surface-variant'}`}>

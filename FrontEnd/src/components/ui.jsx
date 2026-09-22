@@ -43,6 +43,29 @@ export const SectionLabel = ({ children }) => (
   <span className="px-space-sm font-label-sm text-label-sm uppercase tracking-wider text-outline">{children}</span>
 );
 
+/* Spotify-style track descriptors from backend analysis (Phase 1/2):
+   language, instrumental flag, lo-fi flag, tempo. Renders nothing when
+   the song has no descriptors (e.g. not analyzed yet). */
+export const SongBadges = ({ song, compact = false, className = '' }) => {
+  if (!song) return null;
+  const tags = [];
+  if (song.language) tags.push({ key: 'lang', label: song.language, icon: 'language' });
+  if (song.is_instrumental) tags.push({ key: 'inst', label: 'Instrumental', icon: 'piano' });
+  if (song.is_lofi) tags.push({ key: 'lofi', label: 'Lo-Fi', icon: 'graphic_eq' });
+  if (!compact && song.bpm) tags.push({ key: 'bpm', label: `${Math.round(song.bpm)} BPM`, icon: 'speed' });
+  if (!tags.length) return null;
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+      {tags.map((t) => (
+        <span key={t.key} className="inline-flex items-center gap-0.5 px-1.5 py-px rounded bg-white/[0.08] text-on-surface-variant font-label-sm text-label-sm uppercase tracking-wider">
+          <Icon name={t.icon} size={12} />
+          {t.label}
+        </span>
+      ))}
+    </span>
+  );
+};
+
 export const EmptyState = ({ icon = 'music_note', title, hint, action }) => (
   <div className="text-center py-16 animate-fade-up">
     <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-surface-container flex items-center justify-center text-outline">

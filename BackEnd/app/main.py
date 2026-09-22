@@ -21,6 +21,7 @@ from app.api.routes.telegram import router as telegram_router
 from app.api.routes.albums import router as albums_router
 from app.api.routes.artists import router as artists_router
 from app.api.routes.search import router as search_router
+from app.api.routes.analysis import router as analysis_router
 
 
 async def refresh_ai_recommendations():
@@ -46,6 +47,21 @@ async def refresh_ai_recommendations():
             print(f"[AI] Error refreshing recommendations: {e}")
 
         await asyncio.sleep(3600)
+
+
+async def decay_taste_profiles():
+    """Background task that decays taste affinities every week so recent
+    listening outweighs ancient history (Spotify-style chronological decay).
+    """
+    from app.db.crud.profile import decay_profiles
+
+    while True:
+        try:
+            touched = await decay_profiles(0.9)
+            print(f"[PROFILE] Weekly taste decay applied ({touched} profiles)")
+        except Exception as e:
+            print(f"[PROFILE] Decay error: {e}")
+        await asyncio.sleep(7 * 24 * 3600)
 
 
 @asynccontextmanager
@@ -99,6 +115,7 @@ async def lifespan(app: FastAPI):
             print(f"[STARTUP] Feature load warning: {e}")
 
         asyncio.create_task(refresh_ai_recommendations())
+        asyncio.create_task(decay_taste_profiles())
         try:
             from app.services.channel_indexer import start_periodic_rescan
 
@@ -141,6 +158,7 @@ app.include_router(albums_router)
 app.include_router(artists_router)
 app.include_router(search_router)
 app.include_router(recommend_router)
+app.include_router(analysis_router)
 
 
 @app.get("/")

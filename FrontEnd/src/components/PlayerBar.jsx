@@ -1,5 +1,5 @@
 import React from 'react';
-import { Icon, Cover, fmtTime } from './ui';
+import { Icon, Cover, SongBadges, fmtTime } from './ui';
 
 export default function PlayerBar({
   currentSong, isPlaying, progress, duration, volume, setVolume,
@@ -17,6 +17,7 @@ export default function PlayerBar({
               {currentSong && <span className="px-1.5 py-0.5 rounded bg-surface-container font-label-sm text-label-sm text-primary border border-white/[0.08]">LOSSLESS</span>}
             </div>
             <span className="font-body-sm text-body-sm text-on-surface-variant truncate">{currentSong?.artist || 'Pick a track'}</span>
+            <SongBadges song={currentSong} compact className="mt-0.5" />
           </div>
           <button className="text-outline hover:text-tertiary transition-colors ml-space-xs" type="button" onClick={(e) => e.stopPropagation()}>
             <Icon name="favorite" size={20} />

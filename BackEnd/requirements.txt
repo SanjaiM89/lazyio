@@ -11,3 +11,9 @@ motor
 dnspython
 telethon
 watchdog
+# Spotify-style audio analysis + similarity (Phase 1)
+numpy
+librosa
+faiss-cpu
+# Tests (BackEnd/tests)
+pytest

@@ -239,7 +239,7 @@ export default function App() {
         <Header view={view} onNavigate={navigate} onBack={back} onForward={fwd} />
         <main className="relative pt-16 pb-28 w-full px-margin flex-1">
           {view === 'home' && <HomeView data={homepage} onPlay={(s) => play(s, homepage?.ai_playlist?.songs?.length ? undefined : songs)} currentId={currentSong?.id} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} onRefresh={() => { loadHome(); loadSongs(1); }} onMenu={(s) => setMenuCtx(s)} />}
-          {view === 'search' && <SearchView query={query} songs={songs} onPlay={(s) => play(s)} currentId={currentSong?.id} onMenu={(s) => setMenuCtx(s)} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} onOpenArtist={(a) => { setArtistFocus(a.name); navigate('artists'); }} />}
+          {view === 'search' && <SearchView query={query} songs={songs} onPlay={(s) => play(s)} currentId={currentSong?.id} onMenu={(s) => setMenuCtx(s)} onOpenAlbum={(a) => { setAlbumFocus(a.id); navigate('album'); }} onOpenArtist={(a) => { setArtistFocus(a.name); navigate('artists'); }} onPickLanguage={(l) => setQuery(l)} />}
           {view === 'library' && <LibraryView songs={songs} currentId={currentSong?.id} onPlay={(s) => play(s)} onMenu={(s) => setMenuCtx(s)} onLoadMore={() => loadSongs(page + 1, true)} hasMore={hasMore} loading={libLoading} />}
           {view === 'songs' && <SongsView songs={songs} currentId={currentSong?.id} onPlay={(s) => play(s)} onMenu={(s) => setMenuCtx(s)} onLoadMore={() => loadSongs(page + 1, true)} hasMore={hasMore} loading={libLoading} />}
           {view === 'albums-grid' && <AlbumsGridView onOpen={(a) => { setAlbumFocus(a.id); navigate('album'); }} onAddAlbum={openAddAlbum} />}

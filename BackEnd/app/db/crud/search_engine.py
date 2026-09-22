@@ -24,6 +24,8 @@ import re
 import time
 from collections import OrderedDict
 
+from app.services.language import parse_language_intent, normalize_language
+
 # Field weights: a title match outranks an artist match outranks an album hit.
 TITLE_W = 3.0
 ARTIST_W = 2.0
@@ -188,6 +190,12 @@ class SearchIndex:
         for key, b in buckets.items():
             display = max(b["names"].items(), key=lambda kv: kv[1])[0]
             top = max(b["songs"], key=lambda s: (s.get("play_count") or 0))
+            lang_counts = {}
+            for s in b["songs"]:
+                lg = normalize_language(s.get("language"))
+                if lg:
+                    lang_counts[lg] = lang_counts.get(lg, 0) + 1
+            dominant = max(lang_counts.items(), key=lambda kv: kv[1])[0] if lang_counts else None
             doc = {
                 "key": key,
                 "name": display,
@@ -195,6 +203,7 @@ class SearchIndex:
                 "song_count": len(b["songs"]),
                 "album_count": len({s.get("album_key") for s in b["songs"] if s.get("album_key")}),
                 "total_plays": sum(s.get("play_count", 0) or 0 for s in b["songs"]),
+                "language": dominant,
             }
             self.artists[key] = doc
             toks = {}
@@ -299,12 +308,18 @@ class SearchIndex:
 
     # ---------------- public API ----------------
 
-    def search_songs(self, query, limit=20):
+    def search_songs(self, query, limit=20, language=None):
+        lang = normalize_language(language)
         out = []
-        for dk, doc_id in self._search_ids(query, limit, kinds=("song",)):
+        for dk, doc_id in self._search_ids(query, limit * (3 if lang else 1), kinds=("song",)):
             s = self.songs.get(doc_id)
-            if s:
-                out.append(s)
+            if not s:
+                continue
+            if lang and normalize_language(s.get("language")) != lang:
+                continue
+            out.append(s)
+            if len(out) >= limit:
+                break
         return out
 
     def search_albums(self, query, limit=8):
@@ -315,30 +330,37 @@ class SearchIndex:
                 out.append(a)
         return out
 
-    def search_artists(self, query, limit=8):
+    def search_artists(self, query, limit=8, language=None):
+        lang = normalize_language(language)
         out = []
-        for dk, doc_id in self._search_ids(query, limit, kinds=("artist",)):
+        for dk, doc_id in self._search_ids(query, limit * (3 if lang else 1), kinds=("artist",)):
             a = self.artists.get(doc_id[3:])
-            if a:
-                out.append(a)
+            if not a:
+                continue
+            if lang and a.get("language") != lang:
+                continue
+            out.append(a)
+            if len(out) >= limit:
+                break
         return out
 
-    def suggest(self, query, limit=8):
+    def suggest(self, query, limit=8, language=None):
         """Lightweight autocomplete payload (id/title/artist only)."""
+        lang = normalize_language(language)
         out = {"songs": [], "albums": [], "artists": []}
         for dk, doc_id in self._search_ids(query, limit * 3, kinds=("song", "album", "artist")):
             if dk == "song" and len(out["songs"]) < limit:
                 s = self.songs.get(doc_id)
-                if s:
-                    out["songs"].append({"id": s["id"], "title": s.get("title"), "artist": s.get("artist")})
+                if s and (not lang or normalize_language(s.get("language")) == lang):
+                    out["songs"].append({"id": s["id"], "title": s.get("title"), "artist": s.get("artist"), "language": s.get("language")})
             elif dk == "album" and len(out["albums"]) < 3:
                 a = self.albums.get(doc_id[3:])
                 if a:
                     out["albums"].append({"id": a["id"], "name": a.get("name"), "artist": a.get("artist")})
             elif dk == "artist" and len(out["artists"]) < 3:
                 a = self.artists.get(doc_id[3:])
-                if a:
-                    out["artists"].append({"key": a["key"], "name": a["name"]})
+                if a and (not lang or (a.get("language") or lang) == lang):
+                    out["artists"].append({"key": a["key"], "name": a["name"], "language": a.get("language")})
             if len(out["songs"]) >= limit and len(out["albums"]) >= 3 and len(out["artists"]) >= 3:
                 break
         return out
@@ -393,7 +415,7 @@ async def _load_snapshot():
             "title": 1, "artist": 1, "album": 1, "album_key": 1,
             "play_count": 1, "duration": 1, "cover_art": 1, "thumbnail": 1,
             "file_name": 1, "has_video": 1, "s3_audio_key": 1, "s3_video_key": 1,
-            "telegram_message_id": 1, "year": 1, "genre": 1,
+            "telegram_message_id": 1, "year": 1, "genre": 1, "language": 1,
         },
     ):
         try:
