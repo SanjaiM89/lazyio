@@ -7,11 +7,10 @@
 # workflow_dispatch builds the same artifacts (version "0.0.0-dev") and
 # uploads them as run artifacts WITHOUT creating a release.
 #
-# Artifacts produced:
+# Artifacts produced (installers / single files only — no loose archives):
 #   lazyio-<ver>-linux-x86_64.AppImage   (bundled, runs anywhere)
-#   lazyio_<ver>_amd64.deb               (Debian/Ubuntu, needs system Qt6)
+#   lazyio_<ver>_amd64.deb               (Debian/Ubuntu installer, needs system Qt6)
 #   lazyio-<ver>-linux-x86_64.tar.gz     (portable tree, e.g. Arch + pacman Qt6)
-#   lazyio-<ver>-windows-x86_64.zip      (portable, windeployqt'd)
 #   lazyio-<ver>-windows-x86_64-setup.exe (NSIS installer)
 #   lazyio-<ver>-macos-arm64.dmg         (drag-install, ad-hoc signed)
 #   mplay-<ver>-android.apk              (release, debug-signed for sideload)
@@ -151,7 +150,7 @@ jobs:
             lazyio-*-linux-x86_64.tar.gz
 
   windows:
-    name: Windows (zip + setup exe)
+    name: Windows (setup exe)
     needs: meta
     runs-on: windows-latest
     timeout-minutes: 45
@@ -185,10 +184,6 @@ jobs:
         run: |
           & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --compiler-runtime --qmldir Desktop\qml dist\bin\lazyio.exe
 
-      - name: Portable zip
-        shell: pwsh
-        run: Compress-Archive -Path dist\* -DestinationPath "lazyio-$env:VERSION-windows-x86_64.zip"
-
       - name: NSIS installer
         shell: pwsh
         run: |
@@ -202,9 +197,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-packages
-          path: |
-            lazyio-*-windows-x86_64.zip
-            lazyio-*-windows-x86_64-setup.exe
+          path: lazyio-*-windows-x86_64-setup.exe
 
   macos:
     name: macOS (dmg)
@@ -232,13 +225,20 @@ jobs:
             -DLAZYIO_VERSION="$VERSION"
           cmake --build build --parallel
 
-      - name: Bundle Qt + dmg (macdeployqt)
+      - name: Bundle Qt (macdeployqt)
         run: |
           # We don't use Qt SQL: drop those drivers, otherwise macdeployqt
           # chokes on their missing third-party dylibs (odbc/psql).
           rm -rf "$QT_ROOT_DIR/plugins/sqldrivers"
-          "$QT_ROOT_DIR/bin/macdeployqt" build/lazyio.app -qmldir=Desktop/qml -dmg
-          mv lazyio.dmg "lazyio-${VERSION}-macos-arm64.dmg"
+          "$QT_ROOT_DIR/bin/macdeployqt" build/lazyio.app -qmldir=Desktop/qml -verbose=2
+          codesign --deep --force --verify --verbose --sign - build/lazyio.app
+
+      - name: Build .dmg (hdiutil)
+        run: |
+          hdiutil create -volname "Lazyio" \
+            -srcfolder build/lazyio.app -ov -format UDZO \
+            "lazyio-${VERSION}-macos-arm64.dmg"
+          ls -lh *.dmg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -332,7 +332,7 @@ jobs:
             - **Linux AppImage**: `chmod +x` and run — Qt bundled, works on most distros.
             - **Linux .deb** (Debian/Ubuntu): needs system Qt 6 (`sudo apt install qt6-base-dev qt6-multimedia-dev qml6-module-*` or equivalent).
             - **Linux .tar.gz** (Arch etc.): extract to `/usr` (`tar -xzf … -C /`) after installing Qt 6 via pacman (`qt6-base qt6-declarative qt6-multimedia qt6-websockets qt6-svg`).
-            - **Windows**: run the `-setup.exe` installer, or unzip the portable `-windows-x86_64.zip`.
+            - **Windows**: run the `-setup.exe` installer.
             - **macOS (Apple Silicon)**: open the `.dmg`, drag to Applications (ad-hoc signed: right-click → Open on first launch).
             - **Android APK**: release build signed with debug keys — sideload to install.
             - **iOS IPA**: unsigned — re-sign with AltStore/Sideloadly (free Apple ID, refresh every 7 days).
