@@ -1,0 +1,328 @@
+# Release pipeline — Lazyio desktop (Qt) + mPlay mobile (Flutter).
+#
+# How to cut a release:
+#   git tag v1.2.3 && git push origin v1.2.3
+# Tags matching vX.Y.Z (optionally with -beta/-rc suffix) build every
+# artifact and publish them to the GitHub Release for that tag.
+# workflow_dispatch builds the same artifacts (version "0.0.0-dev") and
+# uploads them as run artifacts WITHOUT creating a release.
+#
+# Artifacts produced:
+#   lazyio-<ver>-linux-x86_64.AppImage   (bundled, runs anywhere)
+#   lazyio_<ver>_amd64.deb               (Debian/Ubuntu, needs system Qt6)
+#   lazyio-<ver>-linux-x86_64.tar.gz     (portable tree, e.g. Arch + pacman Qt6)
+#   lazyio-<ver>-windows-x86_64.zip      (portable, windeployqt'd)
+#   lazyio-<ver>-windows-x86_64-setup.exe (NSIS installer)
+#   lazyio-<ver>-macos-arm64.dmg         (drag-install, ad-hoc signed)
+#   mplay-<ver>-android.apk              (release, debug-signed for sideload)
+#   mplay-<ver>-ios-unsigned.ipa         (no codesign: re-sign via AltStore/Sideloadly)
+
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for a test build (e.g. 0.0.0-dev)'
+        required: false
+        default: '0.0.0-dev'
+
+permissions:
+  contents: write
+
+env:
+  QT_VERSION: '6.8.3'
+  QT_MODULES: 'qtmultimedia qtwebsockets qtsvg qtdeclarative qtshadertools'
+  FLUTTER_VERSION: '3.24.x'
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      is_release: ${{ steps.v.outputs.is_release }}
+    steps:
+      - id: v
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VER="${GITHUB_REF_NAME#v}"
+            echo "version=${VER}" >> "$GITHUB_OUTPUT"
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux:
+    name: Linux (AppImage, deb, tar.gz)
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+
+      - name: Configure & build
+        run: |
+          cmake -S Desktop -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLAZYIO_VERSION="$VERSION" \
+            -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build
+
+      - name: Stage install tree
+        run: |
+          DESTDIR="$PWD/pkg" cmake --install build
+          find pkg -maxdepth 3 | head -20
+
+      - name: Build .deb
+        run: |
+          mkdir -p debroot/DEBIAN
+          cp -r pkg/usr debroot/
+          cat > debroot/DEBIAN/control <<EOF
+          Package: lazyio
+          Version: $VERSION
+          Section: sound
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Lazyio <noreply@example.com>
+          Depends: libqt6core6t64 | libqt6core6, libqt6gui6t64 | libqt6gui6, libqt6widgets6t64 | libqt6widgets6, libqt6network6t64 | libqt6network6, libqt6qml6, libqt6quick6, libqt6quickcontrols2-6, libqt6multimedia6, libqt6websockets6, libqt6svg6, libgl1, libxkbcommon0
+          Description: Lazyio lossless audio player
+           Qt 6 desktop client for the Lazyio self-hosted music library:
+           bit-perfect FLAC playback, synced lyrics, system tray.
+          EOF
+          dpkg-deb --build debroot "lazyio_${VERSION}_amd64.deb"
+
+      - name: Build .tar.gz (portable tree for Arch etc.)
+        run: tar -czf "lazyio-${VERSION}-linux-x86_64.tar.gz" -C pkg usr
+
+      - name: Build AppImage (bundled Qt)
+        run: |
+          mkdir -p tools && cd tools
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+          wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x *.AppImage
+          ./linuxdeploy-x86_64.AppImage --appimage-extract >/dev/null && mv squashfs-root linuxdeploy
+          ./linuxdeploy-plugin-qt-x86_64.AppImage --appimage-extract >/dev/null && mv squashfs-root linuxdeploy-plugin-qt
+          ./appimagetool-x86_64.AppImage --appimage-extract >/dev/null && mv squashfs-root appimagetool
+          mkdir -p bin
+          ln -sf "$PWD/linuxdeploy-plugin-qt/AppRun" bin/linuxdeploy-plugin-qt
+          ln -sf "$PWD/appimagetool/AppRun" bin/appimagetool
+          export PATH="$PWD/bin:$PATH"
+          cd ..
+          export VERSION="$VERSION"
+          ./tools/linuxdeploy/AppRun \
+            --appdir AppDir \
+            -e pkg/usr/bin/lazyio \
+            -d pkg/usr/share/applications/lazyio.desktop \
+            -i Desktop/resources/icons/png/lazyio-256.png \
+            --plugin qt \
+            --output appimage
+          mv Lazyio-*.AppImage "lazyio-${VERSION}-linux-x86_64.AppImage"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            lazyio-*.AppImage
+            lazyio_*_amd64.deb
+            lazyio-*-linux-x86_64.tar.gz
+
+  windows:
+    name: Windows (zip + setup exe)
+    needs: meta
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+
+      - name: MSVC dev cmd
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure & build
+        shell: pwsh
+        run: |
+          cmake -S Desktop -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DLAZYIO_VERSION=$env:VERSION"
+          cmake --build build
+          cmake --install build --prefix dist
+
+      - name: Bundle Qt (windeployqt)
+        shell: pwsh
+        run: |
+          & "$env:QT_ROOT_DIR\bin\windeployqt.exe" --release --compiler-runtime --qmldir Desktop\qml dist\bin\lazyio.exe
+
+      - name: Portable zip
+        shell: pwsh
+        run: Compress-Archive -Path dist\* -DestinationPath "lazyio-$env:VERSION-windows-x86_64.zip"
+
+      - name: NSIS installer
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $nsi = Get-Content Desktop\packaging\windows\installer.nsi -Raw
+          $nsi = $nsi.Replace('__VERSION__', $env:VERSION).Replace('__SRC__', "$pwd\dist")
+          Set-Content -Path installer.nsi -Value $nsi
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' installer.nsi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: |
+            lazyio-*-windows-x86_64.zip
+            lazyio-*-windows-x86_64-setup.exe
+
+  macos:
+    name: macOS (dmg)
+    needs: meta
+    runs-on: macos-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: mac
+          target: desktop
+          modules: ${{ env.QT_MODULES }}
+          cache: true
+
+      - name: Configure & build
+        run: |
+          cmake -S Desktop -B build -G "Unix Makefiles" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLAZYIO_VERSION="$VERSION"
+          cmake --build build --parallel
+
+      - name: Bundle Qt + dmg (macdeployqt)
+        run: |
+          "$QT_ROOT_DIR/bin/macdeployqt" build/lazyio.app -qmldir=Desktop/qml -dmg
+          mv lazyio.dmg "lazyio-${VERSION}-macos-arm64.dmg"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: lazyio-*-macos-arm64.dmg
+
+  android:
+    name: Android (APK)
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build release APK
+        working-directory: mplay_mobile
+        run: |
+          flutter pub get
+          flutter build apk --release
+          mv build/app/outputs/flutter-apk/app-release.apk "../mplay-${VERSION}-android.apk"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-packages
+          path: mplay-*-android.apk
+
+  ios:
+    name: iOS (unsigned IPA)
+    needs: meta
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build unsigned IPA
+        working-directory: mplay_mobile
+        run: |
+          flutter pub get
+          flutter build ios --release --no-codesign
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa
+          zip -qr "../../../mplay-${VERSION}-ios-unsigned.ipa" Payload
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-packages
+          path: mplay-*-ios-unsigned.ipa
+
+  publish:
+    name: Publish GitHub Release
+    needs: [meta, linux, windows, macos, android, ios]
+    if: needs.meta.outputs.is_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Lazyio ${{ needs.meta.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: release-assets/*
+          body: |
+            ## Install notes
+            - **Linux AppImage**: `chmod +x` and run — Qt bundled, works on most distros.
+            - **Linux .deb** (Debian/Ubuntu): needs system Qt 6 (`sudo apt install qt6-base-dev qt6-multimedia-dev qml6-module-*` or equivalent).
+            - **Linux .tar.gz** (Arch etc.): extract to `/usr` (`tar -xzf … -C /`) after installing Qt 6 via pacman (`qt6-base qt6-declarative qt6-multimedia qt6-websockets qt6-svg`).
+            - **Windows**: run the `-setup.exe` installer, or unzip the portable `-windows-x86_64.zip`.
+            - **macOS (Apple Silicon)**: open the `.dmg`, drag to Applications (ad-hoc signed: right-click → Open on first launch).
+            - **Android APK**: release build signed with debug keys — sideload to install.
+            - **iOS IPA**: unsigned — re-sign with AltStore/Sideloadly (free Apple ID, refresh every 7 days).

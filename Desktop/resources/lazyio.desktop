@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Lazyio
+GenericName=Music Player
+Comment=Lossless audio player (FLAC/ALAC/MP3) with synced lyrics
+Exec=lazyio
+Icon=lazyio
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=music;player;lossless;flac;audio;
+Terminal=false
+StartupWMClass=lazyio
