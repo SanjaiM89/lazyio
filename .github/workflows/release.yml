@@ -34,7 +34,9 @@ permissions:
 
 env:
   QT_VERSION: '6.8.3'
-  QT_MODULES: 'qtmultimedia qtwebsockets qtsvg qtdeclarative qtshadertools'
+  # NOTE: qtdeclarative (QML/Quick) and qtsvg ship in the default Qt install;
+  # listing them here makes aqt fail. Only true add-ons go below.
+  QT_MODULES: 'qtmultimedia qtwebsockets qtshadertools'
   FLUTTER_VERSION: '3.24.x'
 
 jobs:

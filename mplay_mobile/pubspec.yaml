@@ -34,6 +34,12 @@ dev_dependencies:
   flutter_lints: ^2.0.0
   flutter_launcher_icons: "^0.13.1"
 
+dependency_overrides:
+  # package_info_plus 9.x requires Flutter >= 3.29 (new Android Gradle DSL)
+  # and breaks `flutter build apk` on the Flutter 3.24 used in CI.
+  # Hold the last 8.x until the project upgrades Flutter.
+  package_info_plus: 8.3.0
+
 flutter_icons:
   android: "launcher_icon"
   ios: true
