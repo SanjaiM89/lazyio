@@ -36,6 +36,9 @@ env:
   # Matches the dev machine (verified locally). 6.9+ is required for the
   # current Xcode/macOS SDK (older Qt fails linking: framework 'AGL').
   QT_VERSION: '6.11.2'
+  # Qt >= 6.11 has no Windows metadata on the aqt mirror yet — Windows
+  # stays on the newest mirrored 6.10.x (APIs used are stable since 6.2).
+  QT_VERSION_WINDOWS: '6.10.3'
   # NOTE: qtdeclarative (QML/Quick) and qtsvg ship in the default Qt install;
   # listing them here makes aqt fail. Only true add-ons go below.
   QT_MODULES: 'qtmultimedia qtwebsockets qtshadertools'
@@ -160,7 +163,7 @@ jobs:
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
         with:
-          version: ${{ env.QT_VERSION }}
+          version: ${{ env.QT_VERSION_WINDOWS }}
           host: windows
           target: desktop
           arch: win64_msvc2022_64
@@ -231,6 +234,9 @@ jobs:
 
       - name: Bundle Qt + dmg (macdeployqt)
         run: |
+          # We don't use Qt SQL: drop those drivers, otherwise macdeployqt
+          # chokes on their missing third-party dylibs (odbc/psql).
+          rm -rf "$QT_ROOT_DIR/plugins/sqldrivers"
           "$QT_ROOT_DIR/bin/macdeployqt" build/lazyio.app -qmldir=Desktop/qml -dmg
           mv lazyio.dmg "lazyio-${VERSION}-macos-arm64.dmg"
 
