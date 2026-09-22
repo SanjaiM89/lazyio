@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.21)
 
-# Overridable from CI: cmake -DLAZYIO_VERSION=1.2.3
+# Overridable from CI: cmake -DLAZYIO_VERSION=1.2.3 (or 1.2.3-beta.1, 0.0.0-dev).
+# project() needs strict X.Y.Z, so derive the numeric prefix for it and keep
+# the full string for display/filenames via the LAZYIO_VERSION define.
 set(LAZYIO_VERSION "1.0.0" CACHE STRING "Lazyio release version")
+string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" LAZYIO_VERSION_NUM "${LAZYIO_VERSION}")
+if(NOT LAZYIO_VERSION_NUM)
+  set(LAZYIO_VERSION_NUM "0.0.0")
+endif()
 
-project(Lazyio VERSION ${LAZYIO_VERSION} LANGUAGES CXX)
+project(Lazyio VERSION ${LAZYIO_VERSION_NUM} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
