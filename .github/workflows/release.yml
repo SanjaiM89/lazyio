@@ -33,7 +33,9 @@ permissions:
   contents: write
 
 env:
-  QT_VERSION: '6.8.3'
+  # Matches the dev machine (verified locally). 6.9+ is required for the
+  # current Xcode/macOS SDK (older Qt fails linking: framework 'AGL').
+  QT_VERSION: '6.11.2'
   # NOTE: qtdeclarative (QML/Quick) and qtsvg ship in the default Qt install;
   # listing them here makes aqt fail. Only true add-ons go below.
   QT_MODULES: 'qtmultimedia qtwebsockets qtshadertools'
@@ -110,6 +112,9 @@ jobs:
 
       - name: Build AppImage (bundled Qt)
         run: |
+          # linuxdeploy matches Icon= by icon basename: stage a lazyio.png copy.
+          mkdir -p /tmp/lazyio-icon
+          cp Desktop/resources/icons/png/lazyio-256.png /tmp/lazyio-icon/lazyio.png
           mkdir -p tools && cd tools
           wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
           wget -q "https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage"
@@ -128,7 +133,7 @@ jobs:
             --appdir AppDir \
             -e pkg/usr/bin/lazyio \
             -d pkg/usr/share/applications/lazyio.desktop \
-            -i Desktop/resources/icons/png/lazyio-256.png \
+            -i /tmp/lazyio-icon/lazyio.png \
             --plugin qt \
             --output appimage
           mv Lazyio-*.AppImage "lazyio-${VERSION}-linux-x86_64.AppImage"
