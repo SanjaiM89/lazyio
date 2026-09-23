@@ -63,3 +63,21 @@ def test_offset_with_language_filter():
     page2 = [s["id"] for s in idx.search_songs("love", limit=2, language="Tamil", offset=2)]
     assert "e1" not in page1 + page2
     assert not set(page1) & set(page2)
+
+
+def test_language_first_finds_script_titled_songs():
+    # Tamil-script title: zero Latin tokens, invisible to text matching,
+    # but labeled Tamil -> must surface for "tamil songs" (WHERE lang
+    # first, then rank — the Spotify order).
+    idx = SearchIndex()
+    idx.build(
+        [
+            {"id": "s1", "title": "காதல் வைரஸ்", "artist": "Anirudh", "language": "Tamil"},
+            {"id": "e1", "title": "Love Story", "artist": "C", "album": "Z", "language": "English"},
+            {"id": "u1", "title": "Mystery Track", "artist": "D"},
+        ],
+        [],
+    )
+    ids = [s["id"] for s in idx.search_songs("tamil songs", limit=10, language="Tamil")]
+    assert "s1" in ids
+    assert "e1" not in ids

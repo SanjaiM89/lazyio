@@ -329,6 +329,22 @@ class SearchIndex:
 
     # ---------------- public API ----------------
 
+    def _language_pool(self, lang, exclude, need):
+        """All song docs in ``lang`` by personal boost, excluding seen.
+
+        Language-first retrieval: a Tamil-script title has no Latin tokens,
+        so text matching alone can never surface it for "tamil songs".
+        """
+        cands = []
+        for sid, s in self.songs.items():
+            if sid in exclude:
+                continue
+            if normalize_language(s.get("language")) != lang:
+                continue
+            cands.append((self._personal_boost(sid), sid))
+        cands.sort(key=lambda t: (-t[0], t[1]))
+        return [sid for _, sid in cands[:max(0, need)]]
+
     def search_songs(self, query, limit=20, language=None, offset=0):
         lang = normalize_language(language)
         offset = max(0, int(offset or 0))
@@ -341,19 +357,27 @@ class SearchIndex:
                 continue
             seen.add(doc_id)
             out.append(s)
-        if lang and len(out) < offset + min(3, limit) and _has_content_tokens(query, lang):
-            # Graceful fallback (gated): pad with top-ranked *unlabeled*
-            # songs only when the query has content beyond the language
-            # name. Pure "sanskrit songs" never pads — padding with random
-            # unlabeled tracks is how wrong-language songs leaked in.
-            for dk, doc_id in self._search_ids(query, (limit + offset) * 3, kinds=("song",)):
-                s = self.songs.get(doc_id)
-                if not s or doc_id in seen:
-                    continue
-                if s.get("language"):
-                    continue
-                seen.add(doc_id)
-                out.append(s)
+        if lang:
+            # Top up from the whole language pool (text-unmatched labeled
+            # tracks included), then pad with unlabeled only for queries
+            # with content beyond the language name.
+            need = (limit + offset) - len(out)
+            if need > 0:
+                for sid in self._language_pool(lang, seen, need):
+                    s = self.songs.get(sid)
+                    if not s:
+                        continue
+                    seen.add(sid)
+                    out.append(s)
+            if len(out) < offset + min(3, limit) and _has_content_tokens(query, lang):
+                for dk, doc_id in self._search_ids(query, (limit + offset) * 3, kinds=("song",)):
+                    s = self.songs.get(doc_id)
+                    if not s or doc_id in seen:
+                        continue
+                    if s.get("language"):
+                        continue
+                    seen.add(doc_id)
+                    out.append(s)
         return out[offset:offset + limit]
 
     def search_albums(self, query, limit=8):
@@ -375,9 +399,19 @@ class SearchIndex:
                 continue
             seen.add(doc_id)
             out.append(a)
-            if len(out) >= limit:
+            if len(out) >= limit and not lang:
                 break
-        return out
+        if lang and len(out) < limit:
+            # Language-first top-up: artists whose catalog is in-language.
+            rest = [
+                a for key, a in self.artists.items()
+                if f"ar:{key}" not in seen and (a.get("language") or lang) == lang
+            ]
+            rest.sort(key=lambda a: -(a.get("total_plays", 0) or 0))
+            for a in rest[: max(0, limit - len(out))]:
+                seen.add(f"ar:{a['key']}")
+                out.append(a)
+        return out[:limit]
 
     def suggest(self, query, limit=8, language=None):
         """Lightweight autocomplete payload (id/title/artist only)."""
@@ -398,6 +432,13 @@ class SearchIndex:
                     out["artists"].append({"key": a["key"], "name": a["name"], "language": a.get("language")})
             if len(out["songs"]) >= limit and len(out["albums"]) >= 3 and len(out["artists"]) >= 3:
                 break
+        if lang:
+            have = {s["id"] for s in out["songs"]}
+            for sid in self._language_pool(lang, have, limit - len(out["songs"])):
+                s = self.songs.get(sid)
+                if s:
+                    have.add(s["id"])
+                    out["songs"].append({"id": s["id"], "title": s.get("title"), "artist": s.get("artist"), "language": s.get("language")})
         if lang and len(out["songs"]) < min(3, limit) and _has_content_tokens(query, lang):
             seen_ids = {s["id"] for s in out["songs"]}
             for dk, doc_id in self._search_ids(query, limit * 3, kinds=("song",)):
