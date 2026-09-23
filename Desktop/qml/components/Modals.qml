@@ -31,7 +31,7 @@ Item {
             }
             Rectangle { width: parent.width; height: 1; color: Qt.rgba(1,1,1,0.06) }
             ListView { width: parent.width; height: parent.height - 120; clip: true; model: root.playlists
-                delegate: Rectangle { width: parent.width; height: 40; radius: 10; color: h.hovered ? Qt.rgba(1,1,1,0.07) : "transparent"
+                delegate: Rectangle { width: ListView.view ? ListView.view.width : (parent ? parent.width : 300); height: 40; radius: 10; color: h.hovered ? Qt.rgba(1,1,1,0.07) : "transparent"
                     HoverHandler { id: h }
                     Row { anchors.fill: parent; anchors.leftMargin: 10; spacing: 10
                         Text { anchors.verticalCenter: parent.verticalCenter; font.family: Theme.fontIcon; font.pixelSize: 16; color: Theme.onVariant; text: "queue_music" }

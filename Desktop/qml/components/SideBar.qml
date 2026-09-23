@@ -169,38 +169,39 @@ Rectangle {
                 model: ListModel { id: searchResultModel }
                 clip: true
                 delegate: Item {
-                    height: model.kind === "header" ? 24 : 44; width: parent.width
-                    Rectangle { anchors.fill: parent; radius: 8; color: dHover.hovered && model.kind !== "header" ? Qt.rgba(1,1,1,0.06) : "transparent" }
+                    height: (model && model.kind === "header") ? 24 : 44
+                    width: ListView.view ? ListView.view.width : (parent ? parent.width : 340)
+                    Rectangle { anchors.fill: parent; radius: 8; color: dHover.hovered && model && model.kind !== "header" ? Qt.rgba(1,1,1,0.06) : "transparent" }
                     HoverHandler { id: dHover }
                     Text {
-                        visible: model.kind === "header"
+                        visible: model && model.kind === "header"
                         anchors.verticalCenter: parent.verticalCenter; leftPadding: 12
                         font.family: Theme.fontMain; font.pixelSize: 10; font.weight: Font.Bold; color: Theme.outline
-                        text: model.title || ""
+                        text: (model && model.title) || ""
                     }
                     Row {
-                        visible: model.kind !== "header"
+                        visible: model && model.kind !== "header"
                         anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 10
                         Rectangle {
-                            width: 36; height: 36; radius: model.round ? 18 : 8
+                            width: 36; height: 36; radius: (model && model.round) ? 18 : 8
                             anchors.verticalCenter: parent.verticalCenter
                             color: Theme.surfaceHighest; clip: true
-                            Image { anchors.fill: parent; source: model.cover || ""; fillMode: Image.PreserveAspectCrop; visible: status === Image.Ready }
-                            Text { anchors.centerIn: parent; visible: !(model.cover); font.family: Theme.fontIcon; font.pixelSize: 16; color: Theme.outline; text: model.kind === "artist" ? "artist" : (model.kind === "album" ? "album" : "music_note") }
+                            Image { anchors.fill: parent; source: (model && model.cover) || ""; fillMode: Image.PreserveAspectCrop; visible: status === Image.Ready }
+                            Text { anchors.centerIn: parent; visible: !(model && model.cover); font.family: Theme.fontIcon; font.pixelSize: 16; color: Theme.outline; text: (model && model.kind === "artist") ? "artist" : ((model && model.kind === "album") ? "album" : "music_note") }
                         }
                         Column {
                             anchors.verticalCenter: parent.verticalCenter; width: parent.width - 52
-                            Text { elide: Text.ElideRight; width: parent.width; font.family: Theme.fontMain; font.pixelSize: 12; font.weight: Font.DemiBold; color: Theme.onSurface; text: model.title }
-                            Text { elide: Text.ElideRight; width: parent.width; font.family: Theme.fontMain; font.pixelSize: 12; color: Theme.onVariant; text: model.artist }
+                            Text { elide: Text.ElideRight; width: parent.width; font.family: Theme.fontMain; font.pixelSize: 12; font.weight: Font.DemiBold; color: Theme.onSurface; text: (model && model.title) || "" }
+                            Text { elide: Text.ElideRight; width: parent.width; font.family: Theme.fontMain; font.pixelSize: 12; color: Theme.onVariant; text: (model && model.artist) || "" }
                         }
                     }
                     MouseArea {
                         anchors.fill: parent; cursorShape: Qt.PointingHandCursor
-                        enabled: model.kind !== "header"
+                        enabled: model && model.kind !== "header"
                         onClicked: {
-                            if (model.kind === "song") root.songRequested(model.id);
-                            else if (model.kind === "album") root.albumRequested(model.id);
-                            else if (model.kind === "artist") root.artistRequested(model.title);
+                            if (model && model.kind === "song") root.songRequested(model.id);
+                            else if (model && model.kind === "album") root.albumRequested(model.id);
+                            else if (model && model.kind === "artist") root.artistRequested(model.title);
                             searchInput.text = "";
                             searchInput.focus = false;
                         }
