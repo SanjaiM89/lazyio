@@ -1,6 +1,12 @@
 import motor.motor_asyncio
 from app.core.config import settings
 
+try:
+    import dns.resolver
+    dns.resolver.default_resolver = dns.resolver.Resolver(configure=False)
+    dns.resolver.default_resolver.nameservers = ['8.8.8.8', '1.1.1.1']
+except Exception:
+    pass
 
 class Database:
     client: motor.motor_asyncio.AsyncIOMotorClient = None

@@ -98,12 +98,65 @@ GENRE_LANGUAGE_HINTS = {
     "persian": "Persian", "farsi": "Persian",
 }
 
-# Latin-script keywords that identify Devanagari-script content as Sanskrit
-# (script alone cannot tell Hindi/Marathi/Nepali/Sanskrit apart).
+# Well-known artists with an unambiguous primary language, normalized
+# ("anirudh ravichander" -> "anirudhravichander"). Substring-matched
+# against the normalized artist tag. Deliberately EXCLUDES multilingual
+# artists (A.R. Rahman, Sid Sriram, Shreya Ghoshal...) — those resolve
+# via propagation/manual instead of a wrong auto-label.
+ARTIST_LANGUAGE_HINTS = {
+    # Tamil film music
+    "anirudhravichander": "Tamil", "anirudh": "Tamil",
+    "yuvanshankarraja": "Tamil", "yuvan": "Tamil",
+    "harrisjayaraj": "Tamil", "harris": "Tamil",
+    "dimman": "Tamil", "imman": "Tamil",
+    "ghibran": "Tamil",
+    "santhoshnarayanan": "Tamil",
+    "seanroldan": "Tamil",
+    "govindvasantha": "Tamil",
+    "justinprabhakaran": "Tamil",
+    "leonjames": "Tamil",
+    "hiphoptamizha": "Tamil",
+    "ilaiyaraaja": "Tamil", "ilayaraja": "Tamil",
+    "madankarky": "Tamil", "yugabharathi": "Tamil", "viveklyricist": "Tamil",
+    # Hindi film music
+    "arijitsingh": "Hindi", "arijit": "Hindi",
+    "pritam": "Hindi",
+    "vishalshekhar": "Hindi",
+    "amitrivedi": "Hindi",
+    "nehakakkar": "Hindi", "neha": "Hindi",
+    "badshah": "Hindi",
+    "honeysingh": "Hindi", "yoyohoneysingh": "Hindi",
+    "alkayagnik": "Hindi",
+    "kumarsanu": "Hindi",
+    "uditnarayan": "Hindi",
+    "shankarmahadevan": "Hindi",
+    "sukhwindersingh": "Hindi",
+    # Telugu film music
+    "devisriprasad": "Telugu", "dsp": "Telugu",
+    "thamans": "Telugu", "thaman": "Telugu",
+    "mmkeeravani": "Telugu", "keeravani": "Telugu",
+    # Punjabi
+    "diljitdosanjh": "Punjabi", "diljit": "Punjabi",
+    "apdhillon": "Punjabi",
+    "gurdasmaan": "Punjabi",
+    "jassmanak": "Punjabi",
+    # English-language pop
+    "taylorswift": "English",
+    "theweeknd": "English", "weeknd": "English",
+    "edsheeran": "English",
+    "eminem": "English",
+    "davidguetta": "English", "guetta": "English",
+    "adele": "English",
+    "coldplay": "English",
+    "imaginedragons": "English",
+}
+
+# Extended Sanskrit keywords in Latin script for transliterated titles/lyrics
 SANSKRIT_KEYWORDS = {
     "sanskrit", "shloka", "sloka", "stotram", "stotra", "stotras",
     "sahasranamam", "ashtakam", "ashtottaram", "vedic", "mantra", "mantram",
-    "suktam", "kavacham", "gayatri",
+    "suktam", "kavacham", "gayatri", "suprabhatam", "lahari", "trishati",
+    "bhujangam", "namavali", "chalisa", "tripath", "sahasra",
 }
 
 # Native-script substrings with the same job (sandhi compounds included,
@@ -111,7 +164,16 @@ SANSKRIT_KEYWORDS = {
 DEVANAGARI_SANSKRIT_SUBSTRINGS = {
     "सहस्रनाम", "स्तोत्र", "स्तोत्रम्", "श्लोक", "मंत्र", "मन्त्र",
     "गायत्री", "गायत्रि", "सूक्त", "कवच", "अष्टक", "वैदिक", "संस्कृत",
+    "सहस्र", "लहरी", "त्रिशती", "भुजंगम", "नामावली", "चालीसा",
 }
+
+# Transliterated Tamil keywords for titles/genres
+TAMIL_KEYWORDS = {
+    "tamil", "thamizhan", "paadal", "padal", "paadaltgal", "kavithai",
+    "thaalattu", "kavasam", "vanakkam", "kollywood", "isai", "kaadhal",
+    "kadal", "ponniyin",
+}
+
 
 def normalize_language(name) -> str | None:
     """Canonicalize a language label (or None when unknown)."""
@@ -143,17 +205,14 @@ def _script_counts(text: str) -> dict:
 def detect_language(title=None, artist=None, album=None, genre=None) -> tuple:
     """(language | None, detail) from metadata text.
 
-    Majority non-Latin script wins (needs >= 2 script chars), with two
-    disambiguations plain script counting gets wrong:
-    - Japanese/Korean markers (kana/hangul) override raw CJK ideographs,
-      which appear in all three writing systems.
-    - Sanskrit keywords override Devanagari (script alone cannot tell
-      Hindi/Marathi/Nepali/Sanskrit apart).
-    Latin script alone is never evidence; genre hints are the fallback.
+    Majority non-Latin script wins (needs >= 2 script chars), with disambiguations
+    and transliteration keywords for Latin-script metadata.
     """
     blob = " ".join(t or "" for t in (title, artist, album))
     counts = _script_counts(blob)
     words = set(re.sub(r"[^a-z]+", " ", blob.lower()).split())
+    norm_artist = re.sub(r"[^a-z0-9]+", " ", (artist or "").lower())
+    norm_artist_key = re.sub(r"[^a-z0-9]", "", norm_artist)
 
     if counts.get("Japanese", 0) >= 2 or counts.get("Korean", 0) >= 2:
         # Unambiguous markers beat ideograph counts.
@@ -175,6 +234,21 @@ def detect_language(title=None, artist=None, album=None, genre=None) -> tuple:
             return best, f"script:{best.lower()}"
         if n >= 2:
             return best, f"script:{best.lower()}:mixed"
+
+    # Transliterated Sanskrit detection (Latin script keywords in title or album)
+    title_album_words = set(re.sub(r"[^a-z]+", " ", f"{title or ''} {album or ''}".lower()).split())
+    title_album_blob = f"{title or ''} {album or ''}".lower()
+    if title_album_words & SANSKRIT_KEYWORDS or any(kw in title_album_blob for kw in ("sahasranamam", "stotram", "stotra", "ashtakam", "kavacham", "suprabhatam", "shloka", "sloka", "stotras", "mantra")):
+        return "Sanskrit", "transliteration:sanskrit-keyword"
+
+    # Transliterated Tamil detection (Latin script keywords)
+    if words & TAMIL_KEYWORDS or any(kw in title_album_blob for kw in ("tamil", "kollywood", "paadal", "padal", "kavasa")):
+        return "Tamil", "transliteration:tamil-keyword"
+
+    for hint_key, lang in ARTIST_LANGUAGE_HINTS.items():
+        if hint_key and hint_key in norm_artist_key:
+            return lang, f"artist:{hint_key}"
+
     if genre:
         g = str(genre).lower()
         for hint, lang in GENRE_LANGUAGE_HINTS.items():

@@ -31,7 +31,8 @@ def test_devanagari_detection():
 
 
 def test_latin_is_not_evidence():
-    lang, detail = detect_language("Hukum", "Anirudh Ravichander", "Jailer")
+    # Unknown artist + plain Latin text: nothing to go on.
+    lang, detail = detect_language("Mystery Track", "Unknown Singer", "Misc")
     assert lang is None
     assert detail == "script:none"
 
@@ -73,7 +74,7 @@ def test_sanskrit_intent_and_keywords():
     assert parse_language_intent("marathi songs") == "Marathi"
     assert parse_language_intent("nepali music") == "Nepali"
     lang, detail = detect_language("Vishnu Sahasranamam", "M. S. Subbulakshmi")
-    assert lang is None  # Latin script alone is not evidence
+    assert lang == "Sanskrit"  # Transliterated Sanskrit keyword detected
     lang, detail = detect_language("विष्णु सहस्रनामम्", "Singer", genre="Sanskrit")
     assert lang == "Sanskrit"
 
@@ -101,3 +102,16 @@ def test_normalize_new_languages():
     assert normalize_language("marathi") == "Marathi"
     assert normalize_language("japanese") == "Japanese"
     assert normalize_language("arabic") == "Arabic"
+
+
+def test_artist_hints_label_latin_catalogs():
+    assert detect_language("Hukum", "Anirudh Ravichander", "Jailer")[0] == "Tamil"
+    assert detect_language("Blinding Lights", "The Weeknd")[0] == "English"
+    assert detect_language("Tum Hi Ho", "Arijit Singh")[0] == "Hindi"
+    assert detect_language("Kesariya", "A.R. Rahman")[0] is None  # ambiguous: no auto-label
+
+
+def test_script_beats_artist_hint():
+    # Devanagari title wins over a Tamil-hint artist tag.
+    lang, detail = detect_language("तुम ही हो", "Anirudh Ravichander")
+    assert lang == "Hindi"

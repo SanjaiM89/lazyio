@@ -131,6 +131,10 @@ jobs:
           export PATH="$PWD/bin:$PATH"
           cd ..
           export VERSION="$VERSION"
+          export QML_SOURCES_PATHS="$PWD/Desktop/qml"
+          export EXTRA_QT_PLUGINS="platforms;platformthemes;xcbglintegrations;multimedia;iconengines;imageformats;styles"
+          QMAKE_BIN="$(which qmake6 2>/dev/null || which qmake 2>/dev/null || echo "")"
+          if [ -n "$QMAKE_BIN" ]; then export QMAKE="$QMAKE_BIN"; fi
           ./tools/linuxdeploy/AppRun \
             --appdir AppDir \
             -e pkg/usr/bin/lazyio \

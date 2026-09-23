@@ -15,3 +15,8 @@ BackEnd/cache/
 node_modules/
 dist/
 .vite/
+
+.agents/
+skills-lock.json
+catalyst/
+

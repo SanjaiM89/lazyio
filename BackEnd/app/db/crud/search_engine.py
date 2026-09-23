@@ -332,14 +332,18 @@ class SearchIndex:
     def _language_pool(self, lang, exclude, need):
         """All song docs in ``lang`` by personal boost, excluding seen.
 
-        Language-first retrieval: a Tamil-script title has no Latin tokens,
-        so text matching alone can never surface it for "tamil songs".
+        Language-first retrieval: a Tamil-script or transliterated title has no Latin
+        tokens matching 'tamil', so text matching alone can never surface it for 'tamil songs'.
         """
         cands = []
+        from app.services.language import detect_language
         for sid, s in self.songs.items():
             if sid in exclude:
                 continue
-            if normalize_language(s.get("language")) != lang:
+            song_lang = normalize_language(s.get("language"))
+            if not song_lang:
+                song_lang, _ = detect_language(s.get("title"), s.get("artist"), s.get("album"), s.get("genre"))
+            if song_lang != lang:
                 continue
             cands.append((self._personal_boost(sid), sid))
         cands.sort(key=lambda t: (-t[0], t[1]))
@@ -349,11 +353,15 @@ class SearchIndex:
         lang = normalize_language(language)
         offset = max(0, int(offset or 0))
         out, seen = [], set()
+        from app.services.language import detect_language
         for dk, doc_id in self._search_ids(query, (limit + offset) * 3, kinds=("song",)):
             s = self.songs.get(doc_id)
             if not s or doc_id in seen:
                 continue
-            if lang and normalize_language(s.get("language")) != lang:
+            song_lang = normalize_language(s.get("language"))
+            if lang and not song_lang:
+                song_lang, _ = detect_language(s.get("title"), s.get("artist"), s.get("album"), s.get("genre"))
+            if lang and song_lang != lang:
                 continue
             seen.add(doc_id)
             out.append(s)
@@ -374,7 +382,8 @@ class SearchIndex:
                     s = self.songs.get(doc_id)
                     if not s or doc_id in seen:
                         continue
-                    if s.get("language"):
+                    song_l = s.get("language") or detect_language(s.get("title"), s.get("artist"), s.get("album"), s.get("genre"))[0]
+                    if song_l:
                         continue
                     seen.add(doc_id)
                     out.append(s)

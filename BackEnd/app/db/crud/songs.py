@@ -180,7 +180,9 @@ async def ensure_song_indexes():
         pass
     try:
         await songs_collection.create_index(
-            [("title", "text"), ("artist", "text"), ("album", "text")]
+            [("title", "text"), ("artist", "text"), ("album", "text")],
+            default_language="none",
+            language_override="none",
         )
     except Exception:
         pass
