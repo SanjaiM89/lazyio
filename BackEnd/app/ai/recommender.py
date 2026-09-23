@@ -1,9 +1,10 @@
-"""Content-based similarity for Lazyio (Phase 1).
+"""Content-based similarity for Lazyio (Phase 1 + Step 2).
 
-Vectors are 19-dim librosa descriptors (see app.services.audio_analysis):
+Vectors are 32-dim librosa descriptors (see app.services.audio_analysis):
 ``[bpm/200, danceability, energy, instrumentalness, lofi, valence]`` plus
-13 mean MFCCs. Indexed in-process with FAISS; persisted per song in Mongo
-(``audio_vector``) and reloaded at startup (see ``app/main.py``).
+13 mean MFCCs and 13 mean delta-MFCCs. Indexed in-process with FAISS;
+persisted per song in Mongo (``audio_vector``) and reloaded at startup
+(see ``app/main.py``).
 
 All heavy dependencies are optional: without numpy/librosa/faiss the
 module loads fine and every lookup degrades to ``[]``.
@@ -30,8 +31,8 @@ try:
 except ImportError as e:
     logger.warning(f"Audio Recommendation dependencies missing: {e}. Feature disabled.")
     DEPENDENCIES_AVAILABLE = False
-    VECTOR_DIM = 19
-    ANALYZER_VERSION = "librosa-v1"
+    VECTOR_DIM = 32
+    ANALYZER_VERSION = "librosa-v2"
 
 
 class AudioRecommender:

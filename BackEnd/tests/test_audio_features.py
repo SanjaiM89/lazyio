@@ -49,9 +49,9 @@ def test_vector_dim_and_ranges():
     f = {
         "bpm": 128, "danceability": 0.7, "energy": 0.8,
         "instrumentalness": 0.1, "lofi_score": 0.0, "valence": 0.6,
-        "mfcc": list(range(13)),
+        "mfcc": list(range(13)), "dmfcc": list(range(13)),
     }
     v = features_to_vector(f)
-    assert len(v) == 19
+    assert len(v) == 32
     assert abs(v[0] - 0.64) < 1e-6
     assert all(isinstance(x, float) for x in v)

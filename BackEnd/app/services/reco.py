@@ -130,6 +130,74 @@ async def get_transition_counts(song_id: str) -> dict:
     return transitions.get(song_id, {})
 
 
+async def spread_languages(min_votes: int = 3, agreement: float = 0.7) -> int:
+    """Propagate language labels along co-listening edges (Step 3).
+
+    Paper §3.1.1 insight: same-session listening clusters by language.
+    An unlabeled track whose labeled session-neighbors (prev + next)
+    agree is labeled from them (source ``auto:consumption``). Manual
+    labels are never overwritten. Returns the labeled count.
+    """
+    from app.db.connection import history_collection, songs_collection
+    from app.services.language import normalize_language
+
+    events = []
+    async for doc in history_collection.find(
+        {}, projection={"song_id": 1, "played_at": 1}
+    ).sort("played_at", 1):
+        events.append((doc.get("song_id"), doc.get("played_at")))
+    sessions = segment_sessions(events)
+
+    # Undirected neighbor votes from labeled tracks.
+    votes = {}
+    for sess in sessions:
+        for a, b in zip(sess, sess[1:]):
+            if a and b and a != b:
+                votes.setdefault(a, []).append(b)
+                votes.setdefault(b, []).append(a)
+
+    labeled, unlabeled_ids = {}, set()
+    cursor = songs_collection.find({}, projection={"language": 1})
+    async for doc in cursor:
+        lang = normalize_language(doc.get("language") or "")
+        if lang:
+            labeled[str(doc["_id"])] = lang
+        else:
+            unlabeled_ids.add(str(doc["_id"]))
+
+    spread = 0
+    for sid in unlabeled_ids:
+        counts = {}
+        for nb in votes.get(sid, []):
+            lang = labeled.get(nb)
+            if lang:
+                counts[lang] = counts.get(lang, 0) + 1
+        total = sum(counts.values())
+        if total < min_votes:
+            continue
+        best, n = max(counts.items(), key=lambda kv: kv[1])
+        if n / total < agreement:
+            continue
+        try:
+            from bson import ObjectId
+
+            res = await songs_collection.update_one(
+                {"_id": ObjectId(sid), "language": None},
+                {"$set": {"language": best, "language_source": "auto:consumption"}},
+            )
+            spread += res.modified_count
+        except Exception as e:
+            logger.warning(f"consumption spread failed for {sid}: {e}")
+    if spread:
+        try:
+            from app.db.crud.search_engine import mark_search_index_dirty
+
+            mark_search_index_dirty()
+        except Exception:
+            pass
+    return spread
+
+
 async def get_hybrid_similar(song_id: str, limit: int = 10,
                              same_language: bool = True,
                              affinity: dict = None) -> list:

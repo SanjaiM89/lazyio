@@ -4,132 +4,158 @@
 
 ![Lazyio Logo](lazyio_logo.png)
 
-## What's new in v1.0.0
+## Downloads (v1.0.0)
 
-*   **Spotify-style audio analysis**: every track is analyzed with librosa for BPM, instrumentalness (vocal-band energy), lo-fi score (tape hiss/crackle, muffled top end, squashed dynamics), energy, valence (major/minor mood) and a 13-band MFCC timbre fingerprint. Results are stored per song and indexed in-process with FAISS for instant similarity search.
-*   **Language-aware library**: automatic language detection from metadata scripts (Tamil, Hindi, Telugu, Kannada, Malayalam, Punjabi, Bengali and more) with genre-hint fallback. Searching "tamil songs" applies a hard language filter, exactly like Spotify's `language:ta` token. Wrong labels can be corrected per song.
-*   **Hybrid recommendations**: FAISS audio similarity blended with next-track co-occurrence mined from play history (cold-start tracks fall back to content-only), plus personal affinity boosts.
-*   **Taste profiles**: listening behavior (completions, skips, likes) builds per-language/per-genre affinity weights that decay weekly so recent taste wins.
-*   **Qt desktop client**: native `Desktop/` app (Qt 6 + QML) mirroring the web player — lossless playback, synced lyrics, system tray, full library views.
-*   **One-command releases**: pushing a `v*` tag builds and publishes installers for every platform (see below).
+Prebuilt installers and packages are published on the releases page:
 
-## Downloads
+https://github.com/SanjaiM89/lazyio/releases/tag/v1.0.0
 
-Prebuilt packages for every platform are published on the release page:
-
-**https://github.com/SanjaiM89/lazyio/releases/tag/v1.0.0**
-
-| Platform | File | Install |
+| Platform | File | Install notes |
 |---|---|---|
-| Windows 10/11 (x64) | `lazyio-1.0.0-windows-x86_64-setup.exe` | Run the installer, then launch Lazyio from the Start menu |
-| macOS Apple Silicon | `lazyio-1.0.0-macos-arm64.dmg` | Open the dmg, drag Lazyio to Applications (ad-hoc signed: right-click, Open on first launch) |
-| Linux (any distro) | `lazyio-1.0.0-linux-x86_64.AppImage` | `chmod +x` the file and run it, Qt is bundled |
-| Linux (Debian/Ubuntu) | `lazyio_1.0.0_amd64.deb` | `sudo apt install ./lazyio_1.0.0_amd64.deb` (needs system Qt 6, see release notes) |
-| Linux (Arch etc.) | `lazyio-1.0.0-linux-x86_64.tar.gz` | Extract to `/usr`, install Qt 6 via pacman first (see release notes) |
-| Android | `mplay-1.0.0-android.apk` | Sideload the APK (release build, debug-signed) |
-| iOS | `mplay-1.0.0-ios-unsigned.ipa` | Re-sign with AltStore/Sideloadly using a free Apple ID |
+| Windows (x64) | `lazyio-1.0.0-windows-x86_64-setup.exe` | Run the installer (NSIS). Requires no extra setup. |
+| macOS (Apple Silicon) | `lazyio-1.0.0-macos-arm64.dmg` | Open the disk image and drag Lazyio to Applications. Ad-hoc signed: on first launch, right-click the app and choose Open. |
+| Linux (any distro) | `lazyio-1.0.0-linux-x86_64.AppImage` | `chmod +x` the file and run it. Qt is bundled, no dependencies needed. |
+| Linux (Debian/Ubuntu) | `lazyio_1.0.0_amd64.deb` | `sudo dpkg -i lazyio_1.0.0_amd64.deb`. Requires system Qt 6 libraries (see release notes). |
+| Linux (Arch, portable) | `lazyio-1.0.0-linux-x86_64.tar.gz` | Extract to `/usr` (`tar -xzf … -C /`). Install Qt 6 via pacman (`qt6-base qt6-declarative qt6-multimedia qt6-websockets qt6-svg`). |
+| Android | `mplay-1.0.0-android.apk` | Sideload the APK (release build signed with debug keys). Point the app at your backend URL on first launch. |
+| iOS | `mplay-1.0.0-ios-unsigned.ipa` | Unsigned build. Re-sign and sideload with AltStore or Sideloadly (free Apple ID, refresh every 7 days). |
 
-All clients talk to the same self-hosted backend (below) — point them at your server URL.
-
-## Architecture
-
-Monorepo layout:
-
-```
-BackEnd/        FastAPI server (Python 3.13), async MongoDB via Motor
-FrontEnd/       React + Vite web player (served or static)
-Desktop/        Qt 6 + QML desktop client (Linux/Windows/macOS)
-mplay_mobile/   Flutter app (Android/iOS, release APK/IPA via CI)
-.github/        CI: release pipeline (tag-triggered, all platforms)
-```
-
-Backend services (`BackEnd/app/`):
-
-*   `api/` — REST routes: songs, albums, artists, playlists, search, stream, upload, telegram, recommendations, audio analysis, lyrics, websocket.
-*   `services/` — Telegram/Stratus storage, metadata (mutagen/Shazam), artwork, lyrics (LRCLIB + Mongo cache), `audio_analysis` (librosa descriptors), `analysis_jobs` (background backfill), `reco` (hybrid recommendations), `language` (script detection + query intent).
-*   `ai/` — FAISS content-similarity index (`recommender.py`), Mistral homepage/AI-queue recommendations.
-*   `db/crud/` — Mongo access: songs, search engine (in-memory inverted index with typo tolerance + personalization), history, likes, playlists, taste `profile`.
-*   Startup (`main.py` lifespan) warms the FAISS index from Mongo, runs the Telegram rescan loop, the hourly AI refresh and the weekly taste-decay job.
-
-Data flow: Telegram channel (audio files) -> channel indexer -> MongoDB (`songs`, `albums`) -> audio/language backfill jobs enrich each track -> search index + FAISS + taste profile serve the clients over REST. Listening signals (`listen`/`skip`/`like`) feed affinities and co-occurrence transitions.
+New releases are cut by pushing a version tag (`git tag vX.Y.Z && git push origin vX.Y.Z`), which builds and attaches every artifact automatically.
 
 ## Features
 
-*   Premium glassmorphism UI inspired by Apple Music and Spotify.
-*   Unlimited storage via a Telegram channel (auto-indexed on startup).
-*   AI recommendations (Mistral) plus content-based similar tracks (FAISS).
-*   Synced lyrics from LRCLIB with click-to-seek, cached in MongoDB.
-*   Language-aware search ("tamil songs", "english pop") with result chips.
-*   Instrumental / Lo-Fi / language / BPM badges across the web player.
-*   Infinite autoplay: similar tracks keep the queue going.
-*   Playlists, likes, play history, upload with Telegram sync.
-*   System tray + media keys on desktop; background audio on mobile.
+*   **Premium UI**: Glassmorphism design inspired by Apple Music and Spotify.
+*   **Unlimited Storage**: Uses a Telegram channel as a robust backend for storing audio files (auto-indexed on startup).
+*   **AI Recommendations**: Integrated with **Mistral AI** to suggest *new* songs based on your listening history (deduplicated recommendations).
+*   **Spotify-style audio analysis**: Every track is analyzed with librosa (BPM, instrumentalness, lo-fi score, energy, valence) and indexed with FAISS similarity vectors, so autoplay and "similar songs" match by actual sound.
+*   **Language-aware search**: Automatic language detection (Tamil, Hindi, Telugu and more) with intent parsing, so searching "tamil songs" filters to Tamil tracks.
+*   **Hybrid recommendations**: Content similarity blended with next-track co-occurrence from your play history, plus a taste profile that learns your languages/genres and decays weekly.
+*   **Synced Lyrics**: Line-by-line lyrics from [LRCLIB](https://lrclib.net) on web and mobile (Flutter) — auto-follow while playing and click-a-line-to-seek. Each track is looked up once and stored in MongoDB, so repeat plays never hit the lyrics service again.
+*   **Telegram Library**: Set `TELEGRAM_SOURCE_CHANNEL` in `.env` — the backend scans the channel, indexes tracks in MongoDB, and groups same-named music into albums/playlists.
+*   **Live Library**: Real-time updates across devices using WebSockets.
+*   **Playlist Management**: Create playlists, add/rename/delete songs with a native feel.
+*   **Background Playback**: Full audio service support with notification controls.
+*   **Cross-Platform**: React web player, Qt desktop client (Windows/macOS/Linux) and Flutter mobile app (Android/iOS).
 
-## Getting Started (run from source)
+## Architecture
+
+```
+lazyio/
+  BackEnd/        Python/FastAPI server (uvicorn). MongoDB via Motor.
+                  Telegram storage via Telethon, Mistral AI recommendations,
+                  librosa audio analysis + FAISS similarity, LRCLIB lyrics.
+  FrontEnd/       React + Vite web player (Sonance UI).
+  Desktop/        Qt 6 / QML desktop client (same backend API).
+  mplay_mobile/   Flutter app (Android, iOS, Linux, Web).
+  .github/        CI: release pipeline building all installers on version tags.
+```
+
+How the pieces fit together:
+
+1.  **Server (Backend)**: Built with **Python (FastAPI)**.
+    *   **Database**: MongoDB (song metadata, playlists, history, lyrics cache, audio descriptors, taste profile).
+    *   **Storage**: Telegram (via Telethon) - uploads/retrieves files.
+    *   **AI**: Mistral API (recommendation logic) + local audio analysis (librosa) and FAISS similarity search.
+2.  **Web player (Frontend)**: Built with **React + Vite**. Talks to the backend REST API.
+3.  **Desktop client**: Built with **Qt 6 / QML**. Talks to the same backend REST API.
+4.  **Mobile app**: Built with **Flutter**. Talks to the same backend REST API.
+
+## Getting Started
 
 ### Prerequisites
 
-*   [Python 3.12+](https://www.python.org/downloads/)
-*   [MongoDB](https://www.mongodb.com/try/download/community) (local or Atlas)
-*   [Node.js 20+](https://nodejs.org/) (web player)
-*   [Flutter SDK](https://docs.flutter.dev/get-started/install) (mobile, optional)
-*   [Qt 6 + CMake + Ninja](https://www.qt.io/download) (desktop, optional)
-*   Telegram API ID / API Hash (from [my.telegram.org](https://my.telegram.org)), bot token, source channel
-*   Mistral API key (optional, for AI homepage/queue features)
-*   `ffmpeg` on PATH (audio analysis + probing)
+*   [Python 3.10+](https://www.python.org/downloads/)
+*   [MongoDB](https://www.mongodb.com/try/download/community) (Local or Atlas)
+*   [Node.js](https://nodejs.org/) (for the web player)
+*   [Flutter SDK](https://docs.flutter.dev/get-started/install) (for the mobile app)
+*   Qt 6 + CMake + Ninja (for the desktop client, optional)
+*   **Telegram Credentials**: API ID, API Hash (from [my.telegram.org](https://my.telegram.org)) and Bot Token.
+*   **Mistral API Key**: (Optional, for AI features).
 
-### 1. Backend
+### 1. Backend Setup
 
-```bash
-cd BackEnd
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
+1.  Navigate to the backend directory:
+    ```bash
+    cd BackEnd
+    ```
 
-Create `BackEnd/config.env`:
+2.  Create and activate a virtual environment:
+    ```bash
+    python3 -m venv venv
+    source venv/bin/activate  # Linux/Mac
+    # venv\Scripts\activate   # Windows
+    ```
 
-```env
-TELEGRAM_API_ID=your_api_id
-TELEGRAM_API_HASH=your_api_hash
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_SOURCE_CHANNEL=@your_channel_username
-DATABASE_URL=mongodb://localhost:27017
-DATABASE_NAME=lazyio
-MISTRAL_API_KEY=your_mistral_key
-```
+3.  Install dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-Run it (auto-restarts when `PORT` changes in `config.env`):
+4.  Configure Environment Variables:
+    Create a `config.env` file in `BackEnd/` with the following:
+    ```env
+    API_ID=your_telegram_api_id
+    API_HASH=your_telegram_api_hash
+    BOT_TOKEN=your_telegram_bot_token
+    TELEGRAM_API_ID=your_telegram_api_id
+    TELEGRAM_API_HASH=your_telegram_api_hash
+    TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+    TELEGRAM_SOURCE_CHANNEL=@your_channel_username
+    MONGO_DB_URI=mongodb://localhost:27017
+    MISTRAL_API_KEY=your_mistral_api_key
+    ```
 
-```bash
-python start.py
-```
+5.  Run the server:
+    ```bash
+    python start.py
+    ```
+    *Server will start at `http://0.0.0.0:8000`*
 
-Server listens on `http://0.0.0.0:8000` (or `$PORT`). After the first scan, enrich the library:
+6.  (Optional) Backfill audio analysis and language labels for an existing library:
+    ```bash
+    curl -X POST http://localhost:8000/api/admin/detect-languages
+    curl -X POST http://localhost:8000/api/admin/analyze-library \
+      -H 'Content-Type: application/json' -d '{"limit": 50}'
+    ```
 
-```bash
-# fast, metadata only
-curl -X POST http://localhost:8000/api/admin/detect-languages
-# slower, audio analysis in the background (BPM, instrumental, lo-fi, vectors)
-curl -X POST http://localhost:8000/api/admin/analyze-library \
-  -H 'Content-Type: application/json' -d '{"limit": 200}'
-```
+### 1b. Backend Setup (Docker - Faster)
 
-Useful endpoints: `GET /api/songs/{id}/analysis`, `GET /api/recommend/similar/{id}?same_language=true&explain=true`, `GET /api/profile`, `PATCH /api/songs/{id}/language`.
+Instead of setting up Python manually, you can use the pre-built Docker image.
 
-Docker alternative: `docker build -t lazyio-backend BackEnd/ && docker run -d --env-file BackEnd/config.env -p 8000:8000 lazyio-backend`.
+1.  **Create a Config File**:
+    Create a file named `config.env` and populate it with your credentials (see step 4 of manual setup above).
 
-### 2. Web player
+2.  **Pull and Run**:
+    ```bash
+    # Pull the latest image
+    docker pull sanjaim86/lazyio:latest
 
-```bash
-cd FrontEnd
-npm install
-npm run dev      # dev server
-npm run build    # static dist/ for hosting
-```
+    # Run the container (background mode)
+    docker run -d \
+      --name lazyio-backend \
+      --env-file config.env \
+      -p 8000:8000 \
+      sanjaim86/lazyio:latest
+    ```
+    *The backend is now running on port 8000.*
 
-Point `src/api.js` at your backend URL (default `http://localhost:8000`).
+### 2. Web Player Setup
 
-### 3. Desktop app
+1.  Navigate to the web directory:
+    ```bash
+    cd FrontEnd
+    ```
+
+2.  Install dependencies and start the dev server:
+    ```bash
+    npm install
+    npm run dev
+    ```
+    The player talks to the backend API (default `http://localhost:8000`).
+
+### 3. Desktop Client Setup (Optional)
+
+Requires Qt 6 (Core, Gui, Qml, Quick, QuickControls2, Multimedia, Network, WebSockets, Widgets, Svg), CMake 3.21+ and Ninja.
 
 ```bash
 cd Desktop
@@ -138,36 +164,48 @@ cmake --build build
 ./build/lazyio
 ```
 
-### 4. Mobile app
+### 4. Mobile App Setup
 
-```bash
-cd mplay_mobile
-flutter pub get
-flutter run            # debug on device/emulator
-flutter build apk --release   # release APK
-```
+1.  Navigate to the mobile app directory:
+    ```bash
+    cd mplay_mobile
+    ```
 
-Set the backend URL in the app settings (emulator: `http://10.0.2.2:8000`, device: your PC's LAN IP).
+2.  Update Configuration:
+    Open `lib/constants.dart` and update `baseUrl`:
+    ```dart
+    // For Physical Device: Use your PC's local IP (e.g., 192.168.1.5)
+    // For Emulator: Use 'http://10.0.2.2:8000'
+    const String baseUrl = 'http://192.168.1.x:8000';
+    ```
 
-## Releasing
+3.  Install dependencies:
+    ```bash
+    flutter pub get
+    ```
 
-Pushing a version tag builds every artifact and publishes the GitHub Release automatically:
+4.  Run the app:
+    ```bash
+    flutter run
+    ```
 
-```bash
-git tag v1.2.3 && git push origin v1.2.3
-```
-
-Tags with a suffix (`v1.2.3-beta.1`) are published as prereleases. A manual `workflow_dispatch` of the `Release` workflow builds the same artifacts as run artifacts without publishing (useful for testing CI changes).
+5.  Build APK (Release):
+    ```bash
+    flutter build apk --release
+    ```
+    *Output: `build/app/outputs/flutter-apk/app-release.apk`*
 
 ## Tech Stack
 
-*   Clients: React + Vite (web), Qt 6 + QML (desktop), Flutter + just_audio (mobile)
-*   Backend: FastAPI, Uvicorn, Motor, Telethon, librosa, FAISS, Mistral AI
-*   Data: MongoDB (metadata, history, lyrics cache, taste profiles), Telegram (audio storage)
+*   **Web player**: React, Vite, Axios, Fuse.js
+*   **Desktop**: Qt 6, QML, CMake
+*   **Mobile**: Flutter, Provider, Just Audio, Glassmorphism
+*   **Backend**: Python, FastAPI, Uvicorn, Motor (Async MongoDB), librosa, FAISS
+*   **External APIs**: Telegram (Telethon), Mistral AI, LRCLIB
 
 ## Acknowledgements
 
-*   **[fyaz05/FileToLink](https://github.com/fyaz05/FileToLink)**: a significant portion of the Telegram storage logic and backend code was adapted from this project.
+*   **[fyaz05/FileToLink](https://github.com/fyaz05/FileToLink)**: Huge thanks to this repository! A significant portion of the Telegram storage logic and backend code was adapted from this project. It provided the core foundation for handling Telegram file uploads and streaming.
 
 ## License
 

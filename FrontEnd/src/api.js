@@ -134,9 +134,9 @@ export const getAlbum = async (albumId) => {
 
 // ==================== Search (songs + albums + artists) ====================
 
-export const searchLibrary = async (query, songLimit = 20, albumLimit = 8, artistLimit = 8) => {
+export const searchLibrary = async (query, songLimit = 20, albumLimit = 8, artistLimit = 8, songOffset = 0) => {
     const response = await api.get('/search', {
-        params: { q: query, song_limit: songLimit, album_limit: albumLimit, artist_limit: artistLimit },
+        params: { q: query, song_limit: songLimit, album_limit: albumLimit, artist_limit: artistLimit, song_offset: songOffset },
     });
     return response.data;
 };

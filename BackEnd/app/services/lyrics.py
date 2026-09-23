@@ -368,6 +368,29 @@ def _memory_put(key: str, payload: dict | None) -> None:
     _cache[key] = (time.monotonic(), payload)
 
 
+async def _enrich_song_from_lyrics(song: dict, payload: dict | None) -> None:
+    """Label unlabeled songs from fresh LRCLIB payloads.
+
+    - Lyrics script (sustained run) -> ``language`` (source ``auto:lyrics``).
+    - LRCLIB ``instrumental`` flag -> ``lyrics_instrumental`` hint, merged
+      into ``is_instrumental`` for songs without audio analysis yet.
+    """
+    from app.services.language import detect_from_lyrics
+    from app.db.crud.songs import set_song_language, set_lyrics_instrumental
+
+    if not song or not payload:
+        return
+    song_id = str(song.get("_id")) if song.get("_id") else None
+    if not song_id:
+        return
+    if not song.get("language"):
+        lang, _ = detect_from_lyrics(payload.get("plain") or "")
+        if lang:
+            await set_song_language(song_id, lang, source="auto:lyrics")
+    if payload.get("instrumental") and not (song.get("audio") or {}):
+        await set_lyrics_instrumental(song_id, True)
+
+
 async def get_lyrics_for_song(song: dict, refresh: bool = False) -> dict:
     """Cache-first lyrics for one stored song row.
 
@@ -417,6 +440,13 @@ async def get_lyrics_for_song(song: dict, refresh: bool = False) -> dict:
         if song_id:
             # Persist before returning: the next request must not need LRCLIB.
             await save_lyrics(song_id, key, payload)
+            # Fresh lyrics are a strong language signal: label unlabeled
+            # songs from the lyrics script, and record LRCLIB's instrumental
+            # flag when no audio analysis exists yet.
+            try:
+                await _enrich_song_from_lyrics(song, payload)
+            except Exception as e:
+                print(f"[LYRICS] language hook skipped for {song_id}: {e}")
         if payload is None:
             print(f"[LYRICS] no lyrics found for {title!r} / {artist!r}")
         return {"cached": False, "lyrics": payload}

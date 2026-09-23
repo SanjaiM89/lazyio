@@ -18,7 +18,8 @@ logger = logging.getLogger("AnalysisJobs")
 PREFIX_BYTES = 12 * 1024 * 1024  # enough for ~60-90 s of typical encodes
 
 
-async def analyze_local_file(song_id: str, path: str, delete_after: bool = False) -> bool:
+async def analyze_local_file(song_id: str, path: str, delete_after: bool = False,
+                             vocal: bool = True, vocal_threshold: float = 0.2) -> bool:
     """Analyze *path* for *song_id*; optionally delete the file afterwards."""
     from app.services.audio_analysis import analyze_file, features_to_vector
     from app.db.crud.songs import save_song_audio
@@ -32,6 +33,8 @@ async def analyze_local_file(song_id: str, path: str, delete_after: bool = False
         vector = features_to_vector(features)
         await save_song_audio(song_id, features, vector)
         audio_recommender.add_to_index(song_id, vector)
+        if vocal:
+            await fuse_and_store_vocal(song_id, path, threshold=vocal_threshold)
         return True
     except Exception as e:
         logger.warning(f"analyze_local_file failed for {song_id}: {e}")
@@ -68,6 +71,42 @@ def _cached_audio_path(message_id, expected_size: int = 0) -> str | None:
         return None
 
 
+async def fuse_and_store_vocal(song_id: str, path: str, threshold: float = 0.2) -> dict | None:
+    """Run vocal language ID + fuse with the stored label (Step 4).
+
+    Always persists ``audio_vocal`` evidence; writes ``language`` only
+    per the fusion policy (manual labels sacred, overrides need 0.8+).
+    """
+    from app.services.vocal_lang import analyze_vocal_language, resolve_language
+    from app.db.crud.songs import get_song_raw_by_id, save_song_vocal, set_song_language
+
+    try:
+        vocal = analyze_vocal_language(path, threshold=threshold)
+        if not vocal:
+            return None
+        await save_song_vocal(song_id, vocal)
+        raw = await get_song_raw_by_id(song_id)
+        if not raw:
+            return vocal
+        lang, source = resolve_language(
+            raw.get("language"), raw.get("language_source"),
+            vocal.get("language"), vocal.get("confidence", 0.0),
+            threshold=threshold,
+        )
+        if lang:
+            await set_song_language(song_id, lang, source=source)
+            try:
+                from app.db.crud.search_engine import mark_search_index_dirty
+
+                mark_search_index_dirty()
+            except Exception:
+                pass
+        return vocal
+    except Exception as e:
+        logger.warning(f"vocal fusion failed for {song_id}: {e}")
+        return None
+
+
 async def _download_prefix(message_id: int, file_size: int) -> str | None:
     """Stream the head of a Telegram file into a temp file for analysis."""
     from app.services.telegram import telegram_client
@@ -96,11 +135,17 @@ async def _download_prefix(message_id: int, file_size: int) -> str | None:
 
 
 async def detect_library_languages(limit: int = 500, force: bool = False) -> dict:
-    """Fast metadata-only backfill of song languages (no audio needed)."""
-    from app.db.connection import songs_collection
-    from app.services.language import detect_language
+    """Fast metadata-only backfill of song languages (no audio needed).
 
-    stats = {"checked": 0, "labeled": 0, "unknown": 0}
+    Pass 1 labels from title/artist/genre text. Pass 2 propagates within
+    an artist: if >= 2 labeled songs agree (>= 60%), unlabeled songs by
+    the same artist inherit it (source ``auto:artist``). This covers
+    Latin-script catalogs (e.g. Kollywood) where pass 1 finds nothing.
+    """
+    from app.db.connection import songs_collection
+    from app.services.language import detect_language, normalize_language
+
+    stats = {"checked": 0, "labeled": 0, "propagated": 0, "unknown": 0}
     query = {} if force else {"$or": [{"language": {"$exists": False}}, {"language": None}]}
     cursor = songs_collection.find(
         query, projection={"title": 1, "artist": 1, "album": 1, "genre": 1}
@@ -118,7 +163,8 @@ async def detect_library_languages(limit: int = 500, force: bool = False) -> dic
             stats["labeled"] += 1
         else:
             stats["unknown"] += 1
-    if stats["labeled"]:
+    stats["propagated"] = await _propagate_artist_languages()
+    if stats["labeled"] or stats["propagated"]:
         try:
             from app.db.crud.search_engine import mark_search_index_dirty
 
@@ -128,7 +174,45 @@ async def detect_library_languages(limit: int = 500, force: bool = False) -> dic
     return stats
 
 
-async def analyze_library_job(limit: int = 50, force: bool = False, max_mb: int = 150) -> dict:
+async def _propagate_artist_languages(min_labeled: int = 2, agreement: float = 0.6) -> int:
+    """Label unlabeled songs from same-artist consensus. Returns count."""
+    from app.db.connection import songs_collection
+    from app.services.language import normalize_language
+    import re
+
+    buckets = {}
+    cursor = songs_collection.find(
+        {}, projection={"artist": 1, "language": 1}
+    )
+    async for doc in cursor:
+        raw = (doc.get("artist") or "").strip()
+        if not raw or raw in ("Unknown Artist", "Unknown"):
+            continue
+        key = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+        b = buckets.setdefault(key, {"labeled": {}, "unlabeled": []})
+        lang = normalize_language(doc.get("language") or "")
+        if lang:
+            b["labeled"][lang] = b["labeled"].get(lang, 0) + 1
+        else:
+            b["unlabeled"].append(doc["_id"])
+    propagated = 0
+    for b in buckets.values():
+        total = sum(b["labeled"].values())
+        if total < min_labeled or not b["unlabeled"]:
+            continue
+        best, n = max(b["labeled"].items(), key=lambda kv: kv[1])
+        if n / total < agreement:
+            continue
+        res = await songs_collection.update_many(
+            {"_id": {"$in": b["unlabeled"]}},
+            {"$set": {"language": best, "language_source": "auto:artist"}},
+        )
+        propagated += res.modified_count
+    return propagated
+
+
+async def analyze_library_job(limit: int = 50, force: bool = False, max_mb: int = 150,
+                              vocal: bool = True, vocal_threshold: float = 0.2) -> dict:
     """Backfill audio descriptors + vectors. Returns a summary dict."""
     from app.db.connection import songs_collection
     from app.db.crud.songs import save_song_audio
@@ -175,6 +259,8 @@ async def analyze_library_job(limit: int = 50, force: bool = False, max_mb: int 
             vector = features_to_vector(features)
             await save_song_audio(sid, features, vector)
             audio_recommender.add_to_index(sid, vector)
+            if vocal:
+                await fuse_and_store_vocal(sid, src, threshold=vocal_threshold)
             stats["analyzed"] += 1
         except Exception as e:
             logger.warning(f"library analysis failed for {sid}: {e}")

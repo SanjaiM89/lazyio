@@ -24,7 +24,28 @@ import re
 import time
 from collections import OrderedDict
 
-from app.services.language import parse_language_intent, normalize_language
+from app.services.language import (
+    parse_language_intent,
+    normalize_language,
+    LANGUAGE_ALIASES,
+)
+
+# Filler words carry no content: a query of only these (+ a language name)
+# must never trigger fallback padding (Step 0 hotfix).
+INTENT_FILLERS = {
+    "song", "songs", "track", "tracks", "music", "musics",
+    "playlist", "playlists", "listen", "play", "hits", "mix",
+}
+
+
+def _has_content_tokens(query: str, language: str | None) -> bool:
+    """True when the query has searchable tokens beyond the language
+    name and fillers (e.g. "remix" in "sanskrit remix")."""
+    toks = set(tokenize(query))
+    if language:
+        toks -= {t for t, name in LANGUAGE_ALIASES.items() if name == language}
+    toks -= INTENT_FILLERS
+    return bool(toks)
 
 # Field weights: a title match outranks an artist match outranks an album hit.
 TITLE_W = 3.0
@@ -308,19 +329,32 @@ class SearchIndex:
 
     # ---------------- public API ----------------
 
-    def search_songs(self, query, limit=20, language=None):
+    def search_songs(self, query, limit=20, language=None, offset=0):
         lang = normalize_language(language)
-        out = []
-        for dk, doc_id in self._search_ids(query, limit * (3 if lang else 1), kinds=("song",)):
+        offset = max(0, int(offset or 0))
+        out, seen = [], set()
+        for dk, doc_id in self._search_ids(query, (limit + offset) * 3, kinds=("song",)):
             s = self.songs.get(doc_id)
-            if not s:
+            if not s or doc_id in seen:
                 continue
             if lang and normalize_language(s.get("language")) != lang:
                 continue
+            seen.add(doc_id)
             out.append(s)
-            if len(out) >= limit:
-                break
-        return out
+        if lang and len(out) < offset + min(3, limit) and _has_content_tokens(query, lang):
+            # Graceful fallback (gated): pad with top-ranked *unlabeled*
+            # songs only when the query has content beyond the language
+            # name. Pure "sanskrit songs" never pads — padding with random
+            # unlabeled tracks is how wrong-language songs leaked in.
+            for dk, doc_id in self._search_ids(query, (limit + offset) * 3, kinds=("song",)):
+                s = self.songs.get(doc_id)
+                if not s or doc_id in seen:
+                    continue
+                if s.get("language"):
+                    continue
+                seen.add(doc_id)
+                out.append(s)
+        return out[offset:offset + limit]
 
     def search_albums(self, query, limit=8):
         out = []
@@ -332,13 +366,14 @@ class SearchIndex:
 
     def search_artists(self, query, limit=8, language=None):
         lang = normalize_language(language)
-        out = []
-        for dk, doc_id in self._search_ids(query, limit * (3 if lang else 1), kinds=("artist",)):
+        out, seen = [], set()
+        for dk, doc_id in self._search_ids(query, limit * 3, kinds=("artist",)):
             a = self.artists.get(doc_id[3:])
-            if not a:
+            if not a or doc_id in seen:
                 continue
-            if lang and a.get("language") != lang:
+            if lang and a.get("language") and a.get("language") != lang:
                 continue
+            seen.add(doc_id)
             out.append(a)
             if len(out) >= limit:
                 break
@@ -363,6 +398,16 @@ class SearchIndex:
                     out["artists"].append({"key": a["key"], "name": a["name"], "language": a.get("language")})
             if len(out["songs"]) >= limit and len(out["albums"]) >= 3 and len(out["artists"]) >= 3:
                 break
+        if lang and len(out["songs"]) < min(3, limit) and _has_content_tokens(query, lang):
+            seen_ids = {s["id"] for s in out["songs"]}
+            for dk, doc_id in self._search_ids(query, limit * 3, kinds=("song",)):
+                s = self.songs.get(doc_id)
+                if not s or s["id"] in seen_ids or s.get("language"):
+                    continue
+                seen_ids.add(s["id"])
+                out["songs"].append({"id": s["id"], "title": s.get("title"), "artist": s.get("artist"), "language": s.get("language")})
+                if len(out["songs"]) >= limit:
+                    break
         return out
 
     # ---------------- result cache ----------------

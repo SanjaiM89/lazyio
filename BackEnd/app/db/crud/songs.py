@@ -150,10 +150,11 @@ def _audio_payload(song: dict) -> dict:
     """Flat Spotify-style descriptors for clients (badges, filters)."""
     audio = song.get("audio") or {}
     instrumentalness = audio.get("instrumentalness", 0.0) or 0.0
+    lrclib_instr = bool(song.get("lyrics_instrumental", False))
     return {
         "bpm": audio.get("bpm"),
         "instrumentalness": instrumentalness,
-        "is_instrumental": bool(audio.get("is_instrumental", instrumentalness > 0.7)),
+        "is_instrumental": bool(audio.get("is_instrumental", instrumentalness > 0.7)) or lrclib_instr,
         "lofi_score": audio.get("lofi_score", 0.0) or 0.0,
         "is_lofi": bool(audio.get("is_lofi", False)),
         "energy": audio.get("energy"),
@@ -181,6 +182,12 @@ async def ensure_song_indexes():
         await songs_collection.create_index(
             [("title", "text"), ("artist", "text"), ("album", "text")]
         )
+    except Exception:
+        pass
+    try:
+        # Language filter queries ("tamil songs") hit this directly.
+        # (The text index above is left untouched so existing DBs keep it.)
+        await songs_collection.create_index("language")
     except Exception:
         pass
     try:
@@ -437,7 +444,7 @@ async def get_song_by_telegram_id(message_id: int) -> dict | None:
         return None
 
 
-async def search_songs(query: str, limit: int = 50, language: str = None):
+async def search_songs(query: str, limit: int = 50, language: str = None, offset: int = 0):
     """Fast path first: in-memory index (inverted postings + typo tolerance
     + personalized ranking). Falls back to Mongo regex + difflib when the
     index is unavailable, so search never hard-fails.
@@ -450,15 +457,15 @@ async def search_songs(query: str, limit: int = 50, language: str = None):
 
         engine = await get_engine()
         if engine.songs:
-            return engine.search_songs(q, limit=limit, language=language)
+            return engine.search_songs(q, limit=limit, language=language, offset=offset)
     except Exception:
         pass
-    results = await _search_songs_mongo(q, limit * (3 if language else 1))
+    results = await _search_songs_mongo(q, (limit + offset) or 50)
     if language:
         from app.services.language import normalize_language
 
         results = [s for s in results if normalize_language(s.get("language")) == language]
-    return results[:limit]
+    return results[offset:offset + limit] if limit else results[offset:]
 
 
 async def _search_songs_mongo(query: str, limit: int = 50):
@@ -595,6 +602,29 @@ async def update_song_features(song_id: str, features: list):
     await songs_collection.update_one(
         {"_id": ObjectId(song_id)}, {"$set": {"audio_features": features}}
     )
+
+
+async def save_song_vocal(song_id: str, vocal: dict) -> bool:
+    """Persist vocal-embedding language evidence (posteriors kept)."""
+    try:
+        res = await songs_collection.update_one(
+            {"_id": ObjectId(song_id)}, {"$set": {"audio_vocal": vocal}}
+        )
+        return res.matched_count > 0
+    except Exception:
+        return False
+
+
+async def set_lyrics_instrumental(song_id: str, value: bool = True) -> bool:
+    """Store LRCLIB's instrumental flag as a hint (audio analysis wins)."""
+    try:
+        res = await songs_collection.update_one(
+            {"_id": ObjectId(song_id)},
+            {"$set": {"lyrics_instrumental": bool(value)}},
+        )
+        return res.matched_count > 0
+    except Exception:
+        return False
 
 
 async def set_song_language(song_id: str, language: str, source: str = "manual") -> bool:
@@ -897,19 +927,25 @@ async def get_artist_detail(name: str) -> dict | None:
 
 
 async def search_library(
-    query: str, song_limit: int = 8, album_limit: int = 8, artist_limit: int = 8
+    query: str, song_limit: int = 8, album_limit: int = 8, artist_limit: int = 8,
+    song_offset: int = 0,
 ) -> dict:
-    """Unified search across songs, albums and artists (typo-tolerant)."""
+    """Unified search across songs, albums and artists (typo-tolerant).
+
+    Songs paginate via ``song_offset`` for infinite scroll; albums/artists
+    are expanded client-side by re-requesting with bigger limits.
+    """
     q = (query or "").strip()
     if not q:
         return {"songs": [], "albums": [], "artists": []}
     song_limit = max(1, min(song_limit, 50))
     album_limit = max(1, min(album_limit, 50))
     artist_limit = max(1, min(artist_limit, 50))
+    song_offset = max(0, song_offset or 0)
     from app.services.language import parse_language_intent
 
     lang = parse_language_intent(q)
-    songs = await search_songs(q, limit=song_limit, language=lang)
+    songs = await search_songs(q, limit=song_limit, language=lang, offset=song_offset)
     # Fast path: albums + artists from the in-memory index (no extra
     # queries, no cover-API calls). Falls through to Mongo on any failure.
     try:

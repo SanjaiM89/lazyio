@@ -11,6 +11,12 @@ libraries beyond the ffmpeg the Docker image already ships):
 - ``valence``           0..1 major-vs-minor chroma match (happy <-> sad proxy)
 - ``danceability``      percussive regularity proxy from onset strength
 - ``mfcc``              13 mean MFCCs (timbre fingerprint for similarity)
+- ``dmfcc``             13 mean delta-MFCCs (timbre *change*; Step 2 upgrade)
+
+NOTE (Step 2 scope): the paper's full GMM-codebook histogram needs a
+persisted corpus-level codebook + refit/versioning infra. Mean + delta
+MFCCs capture most of its value at zero infra cost, so the codebook
+stays deferred until similarity quality demands it.
 
 Only the first ``ANALYZE_SECONDS`` of audio are decoded, so analysis stays
 bounded (~5-20 s CPU per track) even for long files.
@@ -45,10 +51,10 @@ except ImportError:
     librosa = None
     LIBROSA_AVAILABLE = False
 
-ANALYZER_VERSION = "librosa-v1"
+ANALYZER_VERSION = "librosa-v2"
 ANALYZE_SECONDS = 75
 ANALYZE_SR = 22050
-VECTOR_DIM = 19  # 6 scalars + 13 MFCCs
+VECTOR_DIM = 32  # 6 scalars + 13 MFCC means + 13 delta-MFCC means
 
 VOCAL_LOW_HZ = 300.0
 VOCAL_HIGH_HZ = 3400.0
@@ -130,9 +136,9 @@ def is_lofi_track(bpm: float, instrumentalness: float, lofi_score: float) -> boo
 
 
 def features_to_vector(f: dict) -> list:
-    """19-dim FAISS vector: 6 normalized scalars + 13 MFCCs."""
-    mfcc = f.get("mfcc") or [0.0] * 13
-    mfcc = (list(mfcc) + [0.0] * 13)[:13]
+    """32-dim FAISS vector: 6 normalized scalars + MFCC + delta-MFCC."""
+    mfcc = _pad13(f.get("mfcc"))
+    dmfcc = _pad13(f.get("dmfcc"))
     vec = [
         _clip01(float(f.get("bpm") or 0) / 200.0),
         _clip01(f.get("danceability") or 0),
@@ -141,8 +147,20 @@ def features_to_vector(f: dict) -> list:
         _clip01(f.get("lofi_score") or 0),
         _clip01(f.get("valence") if f.get("valence") is not None else 0.5),
     ]
-    vec.extend([float(np.clip(v / 100.0, -1.0, 1.0)) if NUMPY_AVAILABLE else 0.0 for v in mfcc])
+    vec.extend([_norm_mfcc(v) for v in mfcc])
+    vec.extend([_norm_mfcc(v) for v in dmfcc])
     return [float(v) for v in vec]
+
+
+def _pad13(vals) -> list:
+    vals = list(vals or [])
+    return (vals + [0.0] * 13)[:13]
+
+
+def _norm_mfcc(v) -> float:
+    if NUMPY_AVAILABLE:
+        return float(np.clip(float(v or 0.0) / 100.0, -1.0, 1.0))
+    return 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -231,6 +249,8 @@ def analyze_file(path: str, max_seconds: int = ANALYZE_SECONDS) -> dict | None:
 
         mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
         mfcc_mean = [float(v) for v in np.mean(mfcc, axis=1)]
+        dmfcc = librosa.feature.delta(mfcc)
+        dmfcc_mean = [float(v) for v in np.mean(dmfcc, axis=1)]
 
         features = {
             "bpm": round(bpm, 2),
@@ -242,6 +262,7 @@ def analyze_file(path: str, max_seconds: int = ANALYZE_SECONDS) -> dict | None:
             "valence": round(valence, 3),
             "danceability": round(danceability, 3),
             "mfcc": [round(v, 3) for v in mfcc_mean],
+            "dmfcc": [round(v, 3) for v in dmfcc_mean],
             "analyzer": ANALYZER_VERSION,
         }
         return features

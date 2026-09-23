@@ -43,8 +43,8 @@ function album(id) { return get("/albums/" + id, {}); }
 function artists(page, limit, query) { return get("/artists", { page: page, limit: limit, query: query || "" }); }
 function artist(name) { return get("/artists/" + encodeURIComponent(name), {}); }
 // ---- search ----
-function search(q, songLimit, albumLimit, artistLimit) {
-    return get("/search", { q: q, song_limit: songLimit || 20, album_limit: albumLimit || 8, artist_limit: artistLimit || 8 });
+function search(q, songLimit, albumLimit, artistLimit, songOffset) {
+    return get("/search", { q: q, song_limit: songLimit || 20, album_limit: albumLimit || 8, artist_limit: artistLimit || 8, song_offset: songOffset || 0 });
 }
 function suggest(q, limit) { return get("/search/suggest", { q: q, limit: limit || 6 }); }
 // ---- playlists ----

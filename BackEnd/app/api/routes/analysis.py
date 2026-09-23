@@ -12,6 +12,8 @@ class AnalyzeLibraryRequest(BaseModel):
     limit: int = 50
     force: bool = False
     max_mb: int = 150
+    vocal: bool = True
+    vocal_threshold: float = 0.2
 
 
 @router.post("/api/admin/analyze-library")
@@ -28,6 +30,8 @@ async def api_analyze_library(request: AnalyzeLibraryRequest, background_tasks: 
         limit=max(1, min(request.limit, 500)),
         force=request.force,
         max_mb=max(10, min(request.max_mb, 2000)),
+        vocal=request.vocal,
+        vocal_threshold=request.vocal_threshold,
     )
     return {"status": "started"}
 
@@ -45,7 +49,6 @@ async def api_song_analysis(song_id: str):
 class DetectLanguagesRequest(BaseModel):
     limit: int = 500
     force: bool = False
-
 
 @router.post("/api/admin/detect-languages")
 async def api_detect_languages(request: DetectLanguagesRequest, background_tasks: BackgroundTasks):
@@ -80,3 +83,45 @@ async def api_set_song_language(song_id: str, request: SetLanguageRequest):
     updated = await get_song_by_id(song_id)
     return {"id": song_id, "language": updated.get("language"),
             "language_source": updated.get("language_source")}
+
+
+@router.get("/api/admin/language-stats")
+async def api_language_stats():
+    """Labeling coverage: total songs, labeled/unlabeled, per-language."""
+    from app.db.connection import songs_collection
+
+    total = await songs_collection.count_documents({})
+    pipeline = [
+        {"$group": {
+            "_id": {"$ifNull": ["$language", None]},
+            "count": {"$sum": 1},
+        }},
+        {"$sort": {"count": -1}},
+    ]
+    by_language = []
+    labeled = 0
+    async for doc in songs_collection.aggregate(pipeline):
+        name = doc["_id"] or "unlabeled"
+        by_language.append({"name": name, "count": doc["count"]})
+        if doc["_id"]:
+            labeled += doc["count"]
+    return {"total": total, "labeled": labeled,
+            "unlabeled": total - labeled, "by_language": by_language}
+
+
+class SpreadLanguagesRequest(BaseModel):
+    min_votes: int = 3
+    agreement: float = 0.7
+
+
+@router.post("/api/admin/spread-languages")
+async def api_spread_languages(request: SpreadLanguagesRequest, background_tasks: BackgroundTasks):
+    """Propagate language labels along co-listening edges (Step 3)."""
+    from app.services.reco import spread_languages
+
+    background_tasks.add_task(
+        spread_languages,
+        min_votes=max(2, request.min_votes),
+        agreement=max(0.5, min(1.0, request.agreement)),
+    )
+    return {"status": "started"}

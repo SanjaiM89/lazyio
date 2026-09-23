@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getAlbums, getAlbum, getArtists, getArtist, getPlaylists, getPlaylist, createPlaylist, deletePlaylist, searchLibrary, getSongsPaginated, uploadSongs, deleteSong, scanTelegramChannel, getScanStatus } from '../api';
 import { Icon, Cover, Badge, EmptyState, fmtTime } from '../components/ui';
 import { TrackTable, FilterBar, AlbumHero } from '../components/TrackTable';
@@ -325,14 +325,38 @@ export function PlaylistsView({ onPlay, currentId, onMenu, openSignal, onOpened 
 export function SearchView({ query, songs: librarySongs = [], onPlay, currentId, onMenu, onOpenAlbum, onOpenArtist, onPickLanguage }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreSongs, setHasMoreSongs] = useState(false);
+  const [artistsExpanded, setArtistsExpanded] = useState(false);
+  const [albumsExpanded, setAlbumsExpanded] = useState(false);
   const [error, setError] = useState(false);
+  const moreRef = useRef(null);
+  const SONGS_PAGE = 30;
+  const GRID_PAGE = 8;
+  const GRID_ALL = 50;
+
+  const fetchPage = async (offset, artistLimit, albumLimit) => {
+    const res = await searchLibrary(query.trim(), SONGS_PAGE, albumLimit, artistLimit, offset);
+    return {
+      songs: res.songs || [],
+      albums: res.albums || [],
+      artists: res.artists || [],
+      language_filter: res.language_filter || null,
+    };
+  };
+
+  // Fresh search on query change (resets pagination + expansion).
   useEffect(() => {
-    if (!query.trim()) { setData(null); setError(false); return; }
+    if (!query.trim()) { setData(null); setError(false); setHasMoreSongs(false); return; }
     setLoading(true);
     setError(false);
+    setArtistsExpanded(false);
+    setAlbumsExpanded(false);
     const t = setTimeout(async () => {
       try {
-        setData(await searchLibrary(query.trim(), 30, 8, 8));
+        const page = await fetchPage(0, GRID_PAGE, GRID_PAGE);
+        setData(page);
+        setHasMoreSongs(page.songs.length >= SONGS_PAGE);
       } catch (e) {
         console.error(e);
         setError(true);
@@ -341,13 +365,63 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
     }, 300);
     return () => clearTimeout(t);
   }, [query]);
+
+  const loadMoreSongs = async () => {
+    if (loadingMore || !hasMoreSongs || !data) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchPage(data.songs.length, GRID_PAGE, GRID_PAGE);
+      const seen = new Set(data.songs.map((s) => s.id));
+      const fresh = page.songs.filter((s) => s.id && !seen.has(s.id));
+      // If the backend repeated the tail (index rebuild mid-scroll),
+      // stop instead of looping forever on duplicates.
+      if (!fresh.length) { setHasMoreSongs(false); return; }
+      setData((d) => ({ ...d, songs: [...d.songs, ...fresh] }));
+      setHasMoreSongs(page.songs.length >= SONGS_PAGE && fresh.length > 0);
+    } catch (e) {
+      console.error(e);
+    } finally { setLoadingMore(false); }
+  };
+
+  // Infinite scroll: sentinel at the end of the songs list.
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || !hasMoreSongs) return;
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMoreSongs(); },
+      { rootMargin: '600px' }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [hasMoreSongs, data?.songs?.length]);
+
+  const expandGrid = async (kind) => {
+    if (!data) return;
+    try {
+      if (kind === 'artists') {
+        const page = await fetchPage(0, GRID_ALL, GRID_PAGE);
+        setData((d) => ({ ...d, artists: page.artists }));
+        setArtistsExpanded(true);
+      } else {
+        const page = await fetchPage(0, GRID_PAGE, GRID_ALL);
+        setData((d) => ({ ...d, albums: page.albums }));
+        setAlbumsExpanded(true);
+      }
+    } catch (e) { console.error(e); }
+  };
   // Client-side typo-tolerant fallback merged under server hits, so even
   // songs missing from the server response (or a failed request) surface.
+  // When the server applied a language filter, the fallback respects it:
+  // confidently other-language tracks are dropped (Step 0 hotfix).
   const index = useMemo(() => makeSongIndex(librarySongs), [librarySongs]);
   const fallback = useMemo(() => fuzzySongs(index, query, 10), [index, query]);
-  const allSongs = mergeSongs(data?.songs, fallback);
-  const total = allSongs.length + (data?.albums?.length || 0) + (data?.artists?.length || 0);
   const langFilter = data?.language_filter || null;
+  const langFallback = useMemo(() => {
+    if (!langFilter) return fallback;
+    return fallback.filter((s) => !s.language || s.language === langFilter);
+  }, [fallback, langFilter]);
+  const allSongs = mergeSongs(data?.songs, langFallback);
+  const total = allSongs.length + (data?.albums?.length || 0) + (data?.artists?.length || 0);
   const resultLangs = useMemo(() => {
     const langs = [];
     for (const s of allSongs) {
@@ -390,9 +464,16 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
         <>
           {(data.artists?.length > 0) && (
             <section>
-              <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline px-space-xs">Artists</span>
+              <div className="flex items-center justify-between px-space-xs">
+                <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">Artists</span>
+                {data.artists.length >= GRID_PAGE && (
+                  <button onClick={() => artistsExpanded ? setArtistsExpanded(false) : expandGrid('artists')} className="font-label-md text-label-md text-primary hover:underline" type="button">
+                    {artistsExpanded ? 'Show less' : `Show more (${data.artists.length}+)`}
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
-                {data.artists.slice(0, 4).map((a) => (
+                {(artistsExpanded ? data.artists : data.artists.slice(0, 4)).map((a) => (
                   <button key={a.key} onClick={() => onOpenArtist?.(a)} className="text-left p-3 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition">
                     <Cover src={a.cover_art} size="w-full aspect-square" rounded="rounded-full" icon="artist" />
                     <p className="font-label-md text-label-md truncate mt-2">{a.name}</p>
@@ -404,9 +485,16 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
           )}
           {(data.albums?.length > 0) && (
             <section>
-              <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline px-space-xs">Albums</span>
+              <div className="flex items-center justify-between px-space-xs">
+                <span className="font-label-sm text-label-sm uppercase tracking-wider text-outline">Albums</span>
+                {data.albums.length >= GRID_PAGE && (
+                  <button onClick={() => albumsExpanded ? setAlbumsExpanded(false) : expandGrid('albums')} className="font-label-md text-label-md text-primary hover:underline" type="button">
+                    {albumsExpanded ? 'Show less' : `Show more (${data.albums.length}+)`}
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-2">
-                {data.albums.slice(0, 4).map((a) => (
+                {(albumsExpanded ? data.albums : data.albums.slice(0, 4)).map((a) => (
                   <button key={a.id} onClick={() => onOpenAlbum(a)} className="text-left p-3 rounded-xl bg-surface-container-low hover:bg-surface-container-high transition">
                     <Cover src={a.cover_art} size="w-full aspect-square" rounded="rounded-lg" icon="album" />
                     <p className="font-label-md text-label-md truncate mt-2">{a.name}</p>
@@ -420,9 +508,16 @@ export function SearchView({ query, songs: librarySongs = [], onPlay, currentId,
             {allSongs.length > 0 ? (
               <div className="p-2 rounded-2xl bg-surface-container-low mt-2">
                 <TrackTable tracks={allSongs} currentId={currentId} onPlay={onPlay} onMenu={onMenu} />
+                <div ref={moreRef} />
+                {loadingMore && (
+                  <div className="flex justify-center py-4"><div className="w-6 h-6 rounded-full border-[3px] border-primary/30 border-t-primary animate-spin" /></div>
+                )}
+                {!hasMoreSongs && allSongs.length > SONGS_PAGE && (
+                  <p className="text-center font-body-sm text-body-sm text-outline py-3">All results loaded</p>
+                )}
               </div>
             ) : (
-              <EmptyState icon="search" title="No results found" hint={`Nothing matched "${query}". Check spelling or try an artist name.`} />
+              <EmptyState icon="search" title="No results found" hint={langFilter ? `No labeled ${langFilter} songs yet. Label a few tracks (or run audio analysis) and they will appear here.` : `Nothing matched "${query}". Check spelling or try an artist name.`} />
             )}
           </section>
           {total === 0 && null}
