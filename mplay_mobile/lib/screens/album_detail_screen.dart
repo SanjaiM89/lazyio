@@ -4,7 +4,10 @@ import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
 import '../providers/video_provider.dart';
+import '../theme/nocturne.dart';
 import '../constants.dart';
+import '../widgets/nocturne_widgets.dart';
+import '../widgets/song_tile.dart';
 
 class AlbumDetailView extends StatelessWidget {
   final Album album;
@@ -37,8 +40,9 @@ class AlbumDetailView extends StatelessWidget {
           if (onBack != null)
             TextButton.icon(
               onPressed: onBack,
-              icon: const Icon(Icons.arrow_back, color: Colors.white54),
-              label: const Text('Back to Albums', style: TextStyle(color: Colors.white54)),
+              icon: const Icon(Icons.arrow_back_rounded, color: Nocturne.onSurfaceVariant),
+              label: const Text('Back to Albums',
+                  style: TextStyle(color: Nocturne.onSurfaceVariant)),
             ),
           const SizedBox(height: 8),
           Row(
@@ -48,52 +52,56 @@ class AlbumDetailView extends StatelessWidget {
                 width: artSize,
                 height: artSize,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  color: kSurfaceColor,
-                  image: album.coverArt != null
-                      ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
-                      : null,
+                  borderRadius: BorderRadius.circular(16),
+                  color: Nocturne.surfaceHighest,
+                  border: Border.all(color: Nocturne.border),
                 ),
-                child: album.coverArt == null
-                    ? const Center(child: Icon(Icons.album, size: 48, color: Colors.white24))
-                    : null,
+                clipBehavior: Clip.antiAlias,
+                child: album.coverArt != null
+                    ? Image.network(album.coverArt!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.album_rounded, size: 48, color: Nocturne.outline))
+                    : const Icon(Icons.album_rounded, size: 48, color: Nocturne.outline),
               ),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Album', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const Text('ALBUM',
+                        style: TextStyle(
+                            color: Nocturne.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2)),
                     Text(album.name,
-                        style: TextStyle(fontSize: isTablet ? 28 : 24, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            fontSize: isTablet ? 28 : 24,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white)),
                     if (album.artist != null)
-                      Text(album.artist!, style: const TextStyle(color: Colors.white54)),
-                    Text('${songs.length} songs', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                      Text(album.artist!,
+                          style: const TextStyle(color: Nocturne.onSurfaceVariant)),
+                    Text('${songs.length} songs',
+                        style: const TextStyle(color: Nocturne.outline, fontSize: 12)),
                   ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
           if (songs.isEmpty)
-            const Text('This album is empty.', style: TextStyle(color: Colors.white38))
+            const Text('This album is empty.', style: TextStyle(color: Nocturne.outline))
           else
             ...songs.asMap().entries.map((e) {
-              final i = e.key;
               final song = e.value;
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Text('${i + 1}', style: const TextStyle(color: Colors.white38)),
-                title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(
-                  [song.artist, if (song.year != null) song.year.toString()].join(' • '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                trailing: song.playCount > 0
-                    ? Text('${song.playCount} plays', style: const TextStyle(color: Colors.white38, fontSize: 11))
-                    : null,
+              final playing =
+                  Provider.of<MusicProvider>(context, listen: false).currentSong?.id ==
+                      song.id;
+              return SongTile(
+                song: song,
+                isPlaying: playing,
                 onTap: () => _play(context, song, songs),
               );
             }),

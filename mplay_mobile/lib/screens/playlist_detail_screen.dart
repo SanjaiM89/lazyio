@@ -4,7 +4,7 @@ import '../models.dart';
 import '../music_provider.dart';
 import '../widgets/song_tile.dart';
 import '../widgets/glass_container.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
 import '../api_service.dart';
 
 class PlaylistDetailScreen extends StatefulWidget {
@@ -74,7 +74,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text("Saved to your Playlists!"),
-              backgroundColor: kPrimaryColor,
+              backgroundColor: Nocturne.primaryContainer,
               behavior: SnackBarBehavior.floating,
             ),
           );
@@ -95,7 +95,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackgroundColor,
+      backgroundColor: Nocturne.background,
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -115,7 +115,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 child: Image.network(
                   widget.playlist.coverImage!,
                   fit: BoxFit.cover,
-                  errorBuilder: (c, o, s) => Container(color: kBackgroundColor),
+                  errorBuilder: (c, o, s) => Container(color: Nocturne.background),
                 ),
               ),
             ),
@@ -128,8 +128,8 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    kBackgroundColor.withOpacity(0.5),
-                    kBackgroundColor,
+                    Nocturne.background.withOpacity(0.5),
+                    Nocturne.background,
                   ],
                   stops: const [0.0, 0.6],
                 ),
@@ -186,7 +186,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                             Text(
                               "PLAYLIST",
                               style: TextStyle(
-                                color: kPrimaryColor.withOpacity(0.8),
+                                color: Nocturne.primaryContainer.withOpacity(0.8),
                                 fontSize: 12,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 2,
@@ -244,14 +244,14 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                         child: ElevatedButton(
                           onPressed: _isLoading ? null : _playAll,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: kPrimaryColor,
-                            foregroundColor: Colors.white,
+                            backgroundColor: Nocturne.primaryContainer,
+                            foregroundColor: Nocturne.onPrimary,
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             ),
                             elevation: 8,
-                            shadowColor: kPrimaryColor.withOpacity(0.4),
+                            shadowColor: Nocturne.primaryContainer.withOpacity(0.4),
                           ),
                           child: const Text(
                             "PLAY ALL",
@@ -270,7 +270,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                       GlassContainer(
                         borderRadius: 30,
                         padding: EdgeInsets.zero,
-                        color: _isSaved ? kPrimaryColor : Colors.white.withOpacity(0.1),
+                        color: _isSaved ? Nocturne.primaryContainer : Colors.white.withOpacity(0.1),
                         child: IconButton(
                           onPressed: _addToMyLibrary,
                           icon: Icon(
@@ -289,7 +289,7 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 // Songs List
                 Expanded(
                   child: _isLoading
-                      ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
+                      ? const Center(child: CircularProgressIndicator(color: Nocturne.primaryContainer))
                       : ListView.builder(
                           padding: const EdgeInsets.only(bottom: 100), // Space for mini player
                           itemCount: _songs.length,

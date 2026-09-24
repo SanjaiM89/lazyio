@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import 'nocturne_widgets.dart';
 
+/// Track row restyled to the Nocturne system (cover, title + badges,
+/// duration / equalizer, optional trailing). API unchanged so all
+/// existing call sites keep working.
 class SongTile extends StatelessWidget {
   final Song song;
   final VoidCallback onTap;
   final bool isPlaying;
   final Widget? trailing;
+  final int? index;
 
   const SongTile({
     super.key,
@@ -14,113 +19,75 @@ class SongTile extends StatelessWidget {
     required this.onTap,
     this.isPlaying = false,
     this.trailing,
+    this.index,
   });
 
   @override
   Widget build(BuildContext context) {
-    final isTablet = Layout.isTablet(context);
-    final artSize = isTablet ? 52.0 : 50.0;
-
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        padding: EdgeInsets.symmetric(horizontal: 14, vertical: isTablet ? 10 : 8),
+        margin: const EdgeInsets.symmetric(vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: isPlaying
-              ? kPrimaryColor.withOpacity(0.12)
+              ? Nocturne.primaryContainer.withOpacity(0.12)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
+          border: isPlaying
+              ? Border.all(color: Nocturne.primaryContainer.withOpacity(0.3))
+              : null,
         ),
         child: Row(
           children: [
-            // Cover Art
-            SizedBox(
-              width: artSize,
-              height: artSize,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: song.coverArt != null && song.coverArt!.isNotEmpty
-                    ? Image.network(
-                        song.coverArt!,
-                        width: artSize,
-                        height: artSize,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          color: kSurfaceColor,
-                          child: const Icon(Icons.music_note, color: Colors.white38),
-                        ),
-                      )
-                    : Container(
-                        color: kSurfaceColor,
-                        child: const Icon(Icons.music_note, color: Colors.white38),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 14),
-
-            // Info
+            CoverArt(song: song, size: 48, radius: 10),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     song.title,
                     style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      fontSize: 15,
-                      color: isPlaying ? kPrimaryColor : Colors.white,
-                      letterSpacing: -0.2,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: isPlaying ? Nocturne.primary : Colors.white,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 3),
+                  const SizedBox(height: 1),
                   Text(
                     song.artist,
                     style: TextStyle(
-                      color: isPlaying ? kPrimaryColor.withOpacity(0.7) : Colors.white54,
-                      fontSize: 13,
+                      color: isPlaying
+                          ? Nocturne.primary.withOpacity(0.8)
+                          : Nocturne.onSurfaceVariant,
+                      fontSize: 12,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  SongBadges(song: song, compact: true),
                 ],
               ),
             ),
-
-            const SizedBox(width: 12),
-
-            // Playing indicator or duration
+            const SizedBox(width: 8),
             if (isPlaying)
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: kPrimaryColor.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.equalizer_rounded, color: kPrimaryColor, size: 16),
-              )
+              const EqBars()
             else
               Text(
-                _formatDuration(song.duration),
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                fmtDuration(Duration(seconds: song.duration.round())),
+                style: const TextStyle(color: Nocturne.outline, fontSize: 12),
               ),
-
             if (trailing != null) ...[
-              const SizedBox(width: 8),
+              const SizedBox(width: 4),
               trailing!,
             ],
           ],
         ),
       ),
     );
-  }
-
-  String _formatDuration(double seconds) {
-    final d = Duration(seconds: seconds.toInt());
-    final min = d.inMinutes;
-    final sec = d.inSeconds % 60;
-    return '$min:${sec.toString().padLeft(2, '0')}';
   }
 }

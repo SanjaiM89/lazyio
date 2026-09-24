@@ -43,11 +43,11 @@ class Layout {
   }
 }
 
-// Apple Music-inspired colors
-const Color kPrimaryColor = Color(0xFFFA2D48); // Apple Music red
-const Color kSecondaryColor = Color(0xFF9333EA);
-const Color kBackgroundColor = Color(0xFF000000); // Pure black like Apple Music
-const Color kSurfaceColor = Color(0xFF1C1C1E); // Apple Music card surface
+// Nocturne theme accents (match the home page)
+const Color kPrimaryColor = Color(0xFFE0836E); // terracotta accent
+const Color kSecondaryColor = Color(0xFFFFB3B6);
+const Color kBackgroundColor = Color(0xFF151316);
+const Color kSurfaceColor = Color(0xFF1D1B1E);
 const Color kSurfaceSecondary = Color(0xFF2C2C2E);
 
 const double kPadding = 16.0;

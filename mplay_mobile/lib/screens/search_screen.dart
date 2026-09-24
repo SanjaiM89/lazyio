@@ -3,7 +3,8 @@ import 'package:provider/provider.dart';
 import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import '../widgets/nocturne_widgets.dart';
 import '../widgets/song_tile.dart';
 import '../providers/video_provider.dart';
 import 'album_detail_screen.dart';
@@ -23,6 +24,7 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Song> _songs = [];
   List<Album> _albums = [];
   List<Artist> _artists = [];
+  String? _languageFilter;
   bool _loading = true;
 
   @override
@@ -52,6 +54,7 @@ class _SearchScreenState extends State<SearchScreen> {
           _songs = songsJson.map((j) => Song.fromJson(j)).toList();
           _albums = albumsJson.map((j) => Album.fromJson(j)).toList();
           _artists = artistsJson.map((j) => Artist.fromJson(j)).toList();
+          _languageFilter = data['language_filter'];
           _loading = false;
         });
       }
@@ -61,56 +64,111 @@ class _SearchScreenState extends State<SearchScreen> {
     }
   }
 
+  void _play(Song song, List<Song> queue) {
+    if (song.isVideo) {
+      Provider.of<MusicProvider>(context, listen: false).stop();
+      Provider.of<VideoProvider>(context, listen: false).playVideo(song);
+    } else {
+      Provider.of<VideoProvider>(context, listen: false).close();
+      Provider.of<MusicProvider>(context, listen: false).playSong(song, queue);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final music = Provider.of<MusicProvider>(context);
-    final pad = Layout.horizontalPadding(context);
 
     return Scaffold(
-      backgroundColor: kBackgroundColor,
+      backgroundColor: Nocturne.background,
       appBar: AppBar(
-        backgroundColor: kBackgroundColor,
+        backgroundColor: Colors.transparent,
         elevation: 0,
-        title: TextField(
-          controller: _controller,
-          autofocus: false,
-          textInputAction: TextInputAction.search,
-          style: const TextStyle(color: Colors.white),
-          onSubmitted: _performSearch,
-          decoration: const InputDecoration(
-            hintText: 'Search songs, albums, artists...',
-            hintStyle: TextStyle(color: Colors.white38),
-            border: InputBorder.none,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Container(
+          decoration: BoxDecoration(
+              color: Nocturne.surfaceHigh, borderRadius: BorderRadius.circular(999)),
+          child: TextField(
+            controller: _controller,
+            textInputAction: TextInputAction.search,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            onSubmitted: _performSearch,
+            decoration: const InputDecoration(
+              hintText: 'Search songs, albums, artists...',
+              hintStyle: TextStyle(color: Nocturne.onSurfaceVariant, fontSize: 13),
+              prefixIcon:
+                  Icon(Icons.search_rounded, color: Nocturne.onSurfaceVariant, size: 20),
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.symmetric(vertical: 11),
+            ),
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
+            icon: const Icon(Icons.search_rounded, color: Nocturne.primary),
             onPressed: () => _performSearch(_controller.text),
           ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
+          ? const Center(child: CircularProgressIndicator(color: Nocturne.primary))
           : (_songs.isEmpty && _albums.isEmpty && _artists.isEmpty)
               ? Center(
-                  child: Text(
-                    'No results for "${_controller.text}"',
-                    style: const TextStyle(color: Colors.white54, fontSize: 16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.search_rounded, size: 44, color: Nocturne.outline),
+                        const SizedBox(height: 12),
+                        Text(
+                          _languageFilter != null
+                              ? 'No labeled $_languageFilter songs yet'
+                              : 'No results for "${_controller.text}"',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          _languageFilter != null
+                              ? 'Label a few tracks or run audio analysis and they will appear here.'
+                              : 'Check spelling or try an artist name.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 12, color: Nocturne.onSurfaceVariant),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               : ListView(
-                  padding: EdgeInsets.symmetric(horizontal: pad, vertical: 16),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
                   children: [
-                    // Artists Section
-                    if (_artists.isNotEmpty) ...[
-                      const Text(
-                        'Artists',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    if (_languageFilter != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                  color: Nocturne.primaryContainer,
+                                  borderRadius: BorderRadius.circular(999)),
+                              child: Text('$_languageFilter only',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Nocturne.onPrimary)),
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 12),
+                    if (_artists.isNotEmpty) ...[
+                      const SectionHeader(title: 'Artists'),
                       SizedBox(
-                        height: 120,
+                        height: 108,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: _artists.length,
@@ -124,26 +182,26 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                               ),
                               child: Container(
-                                width: 90,
+                                width: 84,
                                 margin: const EdgeInsets.only(right: 12),
                                 child: Column(
                                   children: [
                                     Container(
-                                      width: 70,
-                                      height: 70,
-                                      decoration: BoxDecoration(
+                                      width: 64,
+                                      height: 64,
+                                      decoration: const BoxDecoration(
                                         shape: BoxShape.circle,
-                                        color: kSurfaceColor,
-                                        image: artist.coverArt != null
-                                            ? DecorationImage(
-                                                image: NetworkImage(artist.coverArt!),
-                                                fit: BoxFit.cover,
-                                              )
-                                            : null,
+                                        color: Nocturne.surfaceHighest,
                                       ),
-                                      child: artist.coverArt == null
-                                          ? const Icon(Icons.person, color: Colors.white38, size: 36)
-                                          : null,
+                                      clipBehavior: Clip.antiAlias,
+                                      child: artist.coverArt != null
+                                          ? Image.network(artist.coverArt!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(
+                                                  Icons.person_rounded,
+                                                  color: Nocturne.outline))
+                                          : const Icon(Icons.person_rounded,
+                                              color: Nocturne.outline),
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
@@ -151,7 +209,10 @@ class _SearchScreenState extends State<SearchScreen> {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white),
                                     ),
                                   ],
                                 ),
@@ -160,18 +221,12 @@ class _SearchScreenState extends State<SearchScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                     ],
-
-                    // Albums Section
                     if (_albums.isNotEmpty) ...[
-                      const Text(
-                        'Albums',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
+                      const SectionHeader(title: 'Albums'),
                       SizedBox(
-                        height: 170,
+                        height: 160,
                         child: ListView.builder(
                           scrollDirection: Axis.horizontal,
                           itemCount: _albums.length,
@@ -185,38 +240,42 @@ class _SearchScreenState extends State<SearchScreen> {
                                 ),
                               ),
                               child: Container(
-                                width: 120,
+                                width: 112,
                                 margin: const EdgeInsets.only(right: 12),
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Container(
-                                      width: 120,
-                                      height: 120,
+                                      width: 112,
+                                      height: 112,
                                       decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(10),
-                                        color: kSurfaceColor,
-                                        image: album.coverArt != null
-                                            ? DecorationImage(
-                                                image: NetworkImage(album.coverArt!),
-                                                fit: BoxFit.cover,
-                                              )
-                                            : null,
+                                        borderRadius: BorderRadius.circular(12),
+                                        color: Nocturne.surfaceHighest,
                                       ),
-                                      child: album.coverArt == null
-                                          ? const Center(child: Icon(Icons.album, color: Colors.white24, size: 40))
-                                          : null,
+                                      clipBehavior: Clip.antiAlias,
+                                      child: album.coverArt != null
+                                          ? Image.network(album.coverArt!,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const Icon(
+                                                  Icons.album_rounded,
+                                                  color: Nocturne.outline))
+                                          : const Icon(Icons.album_rounded,
+                                              color: Nocturne.outline),
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
                                       album.name,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                                      style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.white),
                                     ),
                                     Text(
                                       '${album.songCount} songs',
-                                      style: const TextStyle(fontSize: 11, color: Colors.white54),
+                                      style: const TextStyle(
+                                          fontSize: 11, color: Nocturne.onSurfaceVariant),
                                     ),
                                   ],
                                 ),
@@ -225,37 +284,15 @@ class _SearchScreenState extends State<SearchScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                     ],
-
-                    // Songs Section
                     if (_songs.isNotEmpty) ...[
-                      const Text(
-                        'Songs',
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 12),
-                      ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _songs.length,
-                        itemBuilder: (context, i) {
-                          final song = _songs[i];
-                          return SongTile(
+                      const SectionHeader(title: 'Songs'),
+                      ..._songs.map((song) => SongTile(
                             song: song,
                             isPlaying: music.currentSong?.id == song.id,
-                            onTap: () {
-                              if (song.isVideo) {
-                                Provider.of<MusicProvider>(context, listen: false).stop();
-                                Provider.of<VideoProvider>(context, listen: false).playVideo(song);
-                              } else {
-                                Provider.of<VideoProvider>(context, listen: false).close();
-                                music.playSong(song, _songs);
-                              }
-                            },
-                          );
-                        },
-                      ),
+                            onTap: () => _play(song, _songs),
+                          )),
                     ],
                   ],
                 ),

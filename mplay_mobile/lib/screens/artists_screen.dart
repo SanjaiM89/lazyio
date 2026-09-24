@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../api_service.dart';
 import '../models.dart';
-import '../music_provider.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import '../widgets/nocturne_widgets.dart';
 import 'artist_detail_screen.dart';
+import 'search_screen.dart';
 
 class ArtistsScreen extends StatefulWidget {
   const ArtistsScreen({super.key});
@@ -86,99 +86,106 @@ class _ArtistsScreenState extends State<ArtistsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pad = Layout.horizontalPadding(context);
-    final topPad = Layout.topPadding(context);
-    final cols = Layout.gridColumns(context);
-
     return Scaffold(
-      backgroundColor: kBackgroundColor,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(pad, topPad, pad, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Artists',
-                  style: TextStyle(
-                    fontSize: Layout.isTablet(context) ? 38 : 32,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1,
+      backgroundColor: Nocturne.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Artists',
+                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+                  const SizedBox(height: 2),
+                  Text(
+                    _total > 0 ? '$_total artists' : 'From your Telegram channel',
+                    style: const TextStyle(fontSize: 13, color: Nocturne.onSurfaceVariant),
                   ),
-                ),
-                Text(
-                  _total > 0 ? '$_total artists' : 'From your Telegram channel',
-                  style: const TextStyle(color: Colors.white54),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  TopSearchBar(
+                    onSubmit: (q) => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => SearchScreen(initialQuery: q))),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
-                : _artists.isEmpty
-                    ? const Center(
-                        child: Text('No artists yet.\nAdd music to the Telegram channel, then rescan.',
-                            textAlign: TextAlign.center, style: TextStyle(color: Colors.white54)),
-                      )
-                    : GridView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(pad, 0, pad, 100),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cols,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.88,
-                        ),
-                        itemCount: _artists.length + (_loadingMore ? 1 : 0),
-                        itemBuilder: (context, i) {
-                          if (i >= _artists.length) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: CircularProgressIndicator(color: kPrimaryColor),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: Nocturne.primary))
+                  : _artists.isEmpty
+                      ? const Center(
+                          child: Text('No artists yet.\nAdd music to the Telegram channel, then rescan.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Nocturne.outline)),
+                        )
+                      : GridView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: MediaQuery.of(context).size.width >= 900 ? 5 : 3,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.82,
+                          ),
+                          itemCount: _artists.length + (_loadingMore ? 1 : 0),
+                          itemBuilder: (context, i) {
+                            if (i >= _artists.length) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: CircularProgressIndicator(color: Nocturne.primary),
+                                ),
+                              );
+                            }
+                            final artist = _artists[i];
+                            return GestureDetector(
+                              onTap: () => _openArtist(artist),
+                              child: Container(
+                                decoration: Nocturne.glassCard,
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  children: [
+                                    Expanded(
+                                      child: AspectRatio(
+                                        aspectRatio: 1,
+                                        child: Container(
+                                          decoration: const BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: Nocturne.surfaceHighest,
+                                          ),
+                                          clipBehavior: Clip.antiAlias,
+                                          child: artist.coverArt != null
+                                              ? Image.network(artist.coverArt!, fit: BoxFit.cover,
+                                                  errorBuilder: (_, __, ___) => const Icon(
+                                                      Icons.person_rounded,
+                                                      size: 36,
+                                                      color: Nocturne.outline))
+                                              : const Icon(Icons.person_rounded,
+                                                  size: 36, color: Nocturne.outline),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(artist.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white)),
+                                    Text('${artist.songCount} songs',
+                                        style: const TextStyle(color: Nocturne.onSurfaceVariant, fontSize: 11)),
+                                  ],
+                                ),
                               ),
                             );
-                          }
-                          final artist = _artists[i];
-                          return GestureDetector(
-                            onTap: () => _openArtist(artist),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: kSurfaceColor,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: Colors.white10,
-                                        image: artist.coverArt != null
-                                            ? DecorationImage(image: NetworkImage(artist.coverArt!), fit: BoxFit.cover)
-                                            : null,
-                                      ),
-                                      child: artist.coverArt == null
-                                          ? const Center(child: Icon(Icons.person, size: 40, color: Colors.white24))
-                                          : null,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(artist.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  Text('${artist.songCount} songs', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
+                          },
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -115,6 +115,12 @@ class MusicProvider with ChangeNotifier {
   Duration get position => _position;
   Duration get duration => _duration;
   List<Song> get playlist => _playlist;
+  double get volume => _audioPlayer.volume;
+
+  Future<void> setVolume(double value) async {
+    await _audioPlayer.setVolume(value.clamp(0.0, 1.0));
+    notifyListeners();
+  }
 
   void setPlaylist(List<Song> songs) {
     _playlist = songs;

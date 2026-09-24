@@ -5,8 +5,8 @@ import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
 import '../library_provider.dart';
-import '../widgets/song_tile.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import '../widgets/nocturne_widgets.dart';
 import '../providers/video_provider.dart';
 import 'playlist_detail_screen.dart';
 import 'album_detail_screen.dart';
@@ -14,15 +14,20 @@ import 'artist_detail_screen.dart';
 import 'search_screen.dart';
 
 class LibraryScreen extends StatefulWidget {
-  const LibraryScreen({super.key});
+  /// Which tab to show first (0 Songs, 1 Playlists). Recently Added
+  /// navigates here with 0 on a fresh instance (newest songs first,
+  /// since the backend returns insertion order).
+  final int initialTab;
+
+  const LibraryScreen({super.key, this.initialTab = 0});
 
   @override
   State<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProviderStateMixin {
+class _LibraryScreenState extends State<LibraryScreen> {
   final TextEditingController _searchController = TextEditingController();
-  late TabController _tabController;
+  int _tab = 0;
   String _searchQuery = "";
   List<Album> _searchAlbums = [];
   List<Artist> _searchArtists = [];
@@ -32,7 +37,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tab = widget.initialTab.clamp(0, 1);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<LibraryProvider>(context, listen: false).loadData();
     });
@@ -40,7 +45,6 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
 
   @override
   void dispose() {
-    _tabController.dispose();
     _searchController.dispose();
     _searchDebounce?.cancel();
     super.dispose();
@@ -80,109 +84,99 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     final music = Provider.of<MusicProvider>(context);
-    final pad = Layout.horizontalPadding(context);
-    final topPad = Layout.topPadding(context);
-    final isTablet = Layout.isTablet(context);
 
     return Scaffold(
-      backgroundColor: kBackgroundColor,
-      body: Column(
-        children: [
-          // Header
-          Padding(
-            padding: EdgeInsets.fromLTRB(pad, topPad, pad, 0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Library',
-                  style: TextStyle(
-                    fontSize: isTablet ? 38 : 32,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -1,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add_rounded),
-                  onPressed: _showCreatePlaylistDialog,
-                ),
-              ],
+      backgroundColor: Nocturne.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 2),
+              child: Text('Library',
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
             ),
-          ),
-          // Tabs
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: pad),
-            child: TabBar(
-              controller: _tabController,
-              labelColor: kPrimaryColor,
-              unselectedLabelColor: Colors.white54,
-              indicatorColor: kPrimaryColor,
-              indicatorSize: TabBarIndicatorSize.label,
-              tabs: const [
-                Tab(text: "Songs"),
-                Tab(text: "Playlists"),
-              ],
-            ),
-          ),
-
-          // Content
-          Expanded(
-            child: Consumer<LibraryProvider>(
-              builder: (context, library, child) {
-                if (library.isLoading && library.songs.isEmpty) {
-                  return const Center(child: CircularProgressIndicator(color: kPrimaryColor));
-                }
-
-                if (library.error != null && library.songs.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.white24),
-                        const SizedBox(height: 16),
-                        Text("Error: ${library.error}", style: const TextStyle(color: Colors.white54)),
-                        TextButton(
-                          onPressed: () => library.loadData(forceRefresh: true),
-                          child: const Text("Retry"),
-                        )
-                      ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SegmentedControl(
+                      tabs: const ['Songs', 'Playlists'],
+                      selected: _tab,
+                      onSelect: (i) => setState(() => _tab = i),
                     ),
-                  );
-                }
-
-                return TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildSongsTab(music, library.songs, pad),
-                    _buildPlaylistsTab(library.playlists, pad),
-                  ],
-                );
-              },
+                  ),
+                  const SizedBox(width: 8),
+                  GestureDetector(
+                    onTap: _showCreatePlaylistDialog,
+                    child: Container(
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                          color: Nocturne.surfaceHigh, shape: BoxShape.circle),
+                      child: const Icon(Icons.add_rounded, size: 18, color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            Expanded(
+              child: Consumer<LibraryProvider>(
+                builder: (context, library, child) {
+                  if (library.isLoading && library.songs.isEmpty) {
+                    return const Center(
+                        child: CircularProgressIndicator(color: Nocturne.primary));
+                  }
+
+                  if (library.error != null && library.songs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline_rounded,
+                              size: 48, color: Nocturne.outline),
+                          const SizedBox(height: 16),
+                          Text("Error: ${library.error}",
+                              style: const TextStyle(color: Nocturne.onSurfaceVariant)),
+                          TextButton(
+                            onPressed: () => library.loadData(forceRefresh: true),
+                            child: const Text("Retry",
+                                style: TextStyle(color: Nocturne.primary)),
+                          )
+                        ],
+                      ),
+                    );
+                  }
+
+                  return _tab == 0
+                      ? _buildSongsTab(music, library)
+                      : _buildPlaylistsTab(library.playlists);
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSongsTab(MusicProvider music, List<Song> songs, double pad) {
+  Widget _buildSongsTab(MusicProvider music, LibraryProvider library) {
+    final songs = library.songs;
     final filteredSongs = _searchQuery.isEmpty
         ? songs
-        : songs.where((s) =>
-            s.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-            s.artist.toLowerCase().contains(_searchQuery.toLowerCase())
-          ).toList();
+        : songs
+            .where((s) =>
+                s.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+                s.artist.toLowerCase().contains(_searchQuery.toLowerCase()))
+            .toList();
 
     return Column(
       children: [
-        // Search
         Padding(
-          padding: EdgeInsets.all(pad),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
           child: Container(
             decoration: BoxDecoration(
-              color: kSurfaceColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
+                color: Nocturne.surfaceHigh, borderRadius: BorderRadius.circular(999)),
             child: TextField(
               controller: _searchController,
               onChanged: _onSearchChanged,
@@ -194,67 +188,74 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   );
                 }
               },
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: Colors.white, fontSize: 13),
               decoration: const InputDecoration(
                 hintText: "Search songs, albums, artists...",
-                hintStyle: TextStyle(color: Colors.white38),
-                prefixIcon: Icon(Icons.search, color: Colors.white38),
+                hintStyle: TextStyle(color: Nocturne.onSurfaceVariant, fontSize: 13),
+                prefixIcon: Icon(Icons.search_rounded, color: Nocturne.onSurfaceVariant, size: 20),
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: EdgeInsets.symmetric(vertical: 11),
               ),
             ),
           ),
         ),
-        // Server results: artists + albums
         if (_searchQuery.trim().length >= 2) ...[
           if (_searching)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
-              child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+              child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Nocturne.primary)),
             ),
           if (_searchArtists.isNotEmpty) ...[
-            Padding(
-              padding: EdgeInsets.fromLTRB(pad, 4, pad, 8),
-              child: const Align(
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 4, 20, 8),
+              child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Artists", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70)),
+                child: Text("Artists",
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Nocturne.onSurfaceVariant)),
               ),
             ),
             SizedBox(
-              height: 96,
+              height: 92,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: pad),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: _searchArtists.length,
                 itemBuilder: (context, i) {
                   final artist = _searchArtists[i];
                   return GestureDetector(
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => ArtistDetailScreen(artistName: artist.name)),
+                      MaterialPageRoute(
+                          builder: (_) => ArtistDetailScreen(artistName: artist.name)),
                     ),
                     child: Container(
-                      width: 72,
+                      width: 68,
                       margin: const EdgeInsets.only(right: 12),
                       child: Column(
                         children: [
                           Container(
-                            width: 56,
-                            height: 56,
-                            decoration: BoxDecoration(
+                            width: 52,
+                            height: 52,
+                            decoration: const BoxDecoration(
                               shape: BoxShape.circle,
-                              color: kSurfaceColor,
-                              image: artist.coverArt != null
-                                  ? DecorationImage(image: NetworkImage(artist.coverArt!), fit: BoxFit.cover)
-                                  : null,
+                              color: Nocturne.surfaceHighest,
                             ),
-                            child: artist.coverArt == null
-                                ? const Icon(Icons.person, color: Colors.white38)
-                                : null,
+                            clipBehavior: Clip.antiAlias,
+                            child: artist.coverArt != null
+                                ? Image.network(artist.coverArt!,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.person_rounded, color: Nocturne.outline))
+                                : const Icon(Icons.person_rounded, color: Nocturne.outline),
                           ),
                           const SizedBox(height: 4),
-                          Text(artist.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11)),
+                          Text(artist.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11, color: Colors.white)),
                         ],
                       ),
                     ),
@@ -264,18 +265,19 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             ),
           ],
           if (_searchAlbums.isNotEmpty) ...[
-            Padding(
-              padding: EdgeInsets.fromLTRB(pad, 8, pad, 8),
-              child: const Align(
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 8, 20, 8),
+              child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text("Albums", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white70)),
+                child: Text("Albums",
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Nocturne.onSurfaceVariant)),
               ),
             ),
             SizedBox(
-              height: 150,
+              height: 140,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.symmetric(horizontal: pad),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 itemCount: _searchAlbums.length,
                 itemBuilder: (context, i) {
                   final album = _searchAlbums[i];
@@ -285,7 +287,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       MaterialPageRoute(builder: (_) => AlbumDetailScreen(albumId: album.id)),
                     ),
                     child: Container(
-                      width: 110,
+                      width: 104,
                       margin: const EdgeInsets.only(right: 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -293,22 +295,26 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                           Expanded(
                             child: Container(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                color: kSurfaceColor,
-                                image: album.coverArt != null
-                                    ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
-                                    : null,
+                                borderRadius: BorderRadius.circular(10),
+                                color: Nocturne.surfaceHighest,
                               ),
-                              child: album.coverArt == null
-                                  ? const Center(child: Icon(Icons.album, color: Colors.white24))
-                                  : null,
+                              clipBehavior: Clip.antiAlias,
+                              width: double.infinity,
+                              child: album.coverArt != null
+                                  ? Image.network(album.coverArt!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.album_rounded, color: Nocturne.outline))
+                                  : const Icon(Icons.album_rounded, color: Nocturne.outline),
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                          Text(album.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                           Text('${album.songCount} songs',
-                              style: const TextStyle(fontSize: 11, color: Colors.white54)),
+                              style: const TextStyle(fontSize: 11, color: Nocturne.onSurfaceVariant)),
                         ],
                       ),
                     ),
@@ -318,10 +324,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
             ),
           ],
         ],
-        // Song list with infinite scroll
         Expanded(
           child: filteredSongs.isEmpty
-              ? const Center(child: Text("No songs found", style: TextStyle(color: Colors.white38)))
+              ? const Center(
+                  child: Text("No songs found", style: TextStyle(color: Nocturne.outline)))
               : NotificationListener<ScrollNotification>(
                   onNotification: (ScrollNotification scrollInfo) {
                     if (scrollInfo is ScrollEndNotification &&
@@ -332,21 +338,24 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   },
                   child: ListView.builder(
                     itemCount: filteredSongs.length + 1,
-                    padding: const EdgeInsets.only(bottom: 100),
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 100),
                     itemBuilder: (context, index) {
                       if (index == filteredSongs.length) {
-                        final library = Provider.of<LibraryProvider>(context);
-                        if (library.isLoadingMore) {
-                          return const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: CircularProgressIndicator(color: kPrimaryColor, strokeWidth: 2)),
-                          );
-                        }
-                        if (!library.hasMoreSongs && filteredSongs.isNotEmpty) {
+                        final lib = Provider.of<LibraryProvider>(context);
+                        if (lib.isLoadingMore) {
                           return const Padding(
                             padding: EdgeInsets.all(16),
                             child: Center(
-                              child: Text("All songs loaded", style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                child: CircularProgressIndicator(
+                                    color: Nocturne.primary, strokeWidth: 2)),
+                          );
+                        }
+                        if (!lib.hasMoreSongs && filteredSongs.isNotEmpty) {
+                          return const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: Center(
+                              child: Text("All songs loaded",
+                                  style: TextStyle(color: Nocturne.outline, fontSize: 12)),
                             ),
                           );
                         }
@@ -355,9 +364,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                       final song = filteredSongs[index];
                       return GestureDetector(
                         onLongPress: () => _showSongOptionsMenu(song),
-                        child: SongTile(
+                        child: NocturneTrackRow(
                           song: song,
-                          isPlaying: music.currentSong?.id == song.id,
+                          index: index,
+                          active: music.currentSong?.id == song.id,
+                          playing: music.currentSong?.id == song.id && music.isPlaying,
                           onTap: () {
                             if (song.isVideo) {
                               Provider.of<MusicProvider>(context, listen: false).stop();
@@ -377,20 +388,20 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     );
   }
 
-  Widget _buildPlaylistsTab(List<Playlist> playlists, double pad) {
+  Widget _buildPlaylistsTab(List<Playlist> playlists) {
     if (playlists.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.queue_music_rounded, size: 64, color: Colors.white24),
+            const Icon(Icons.queue_music_rounded, size: 64, color: Nocturne.outline),
             const SizedBox(height: 16),
-            const Text("No playlists yet", style: TextStyle(color: Colors.white54)),
+            const Text("No playlists yet", style: TextStyle(color: Nocturne.onSurfaceVariant)),
             const SizedBox(height: 8),
             TextButton.icon(
               onPressed: _showCreatePlaylistDialog,
-              icon: const Icon(Icons.add),
-              label: const Text("Create Playlist"),
+              icon: const Icon(Icons.add_rounded, color: Nocturne.primary),
+              label: const Text("Create Playlist", style: TextStyle(color: Nocturne.primary)),
             ),
           ],
         ),
@@ -398,51 +409,59 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     }
 
     return ListView.builder(
-      padding: EdgeInsets.all(pad),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       itemCount: playlists.length,
       itemBuilder: (context, index) {
         final pl = playlists[index];
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
-          decoration: BoxDecoration(
-            color: kSurfaceColor,
+          child: Material(
+            color: Nocturne.surfaceLow,
             borderRadius: BorderRadius.circular(14),
-          ),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlist: pl)),
-            ),
-            leading: SizedBox(
-              width: 52,
-              height: 52,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: pl.coverImage != null
-                    ? Image.network(pl.coverImage!, fit: BoxFit.cover)
-                    : Container(
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(colors: [kPrimaryColor, Color(0xFFFF6B6B)]),
-                        ),
-                        child: const Icon(Icons.playlist_play_rounded, color: Colors.white, size: 26),
-                      ),
+            child: ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => PlaylistDetailScreen(playlist: pl)),
               ),
-            ),
-            title: Text(pl.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: Text("${pl.songCount} songs", style: const TextStyle(color: Colors.white54, fontSize: 13)),
-            trailing: PopupMenuButton(
-              icon: const Icon(Icons.more_vert, color: Colors.white54),
-              color: kSurfaceColor,
-              itemBuilder: (ctx) => [
-                const PopupMenuItem(value: 'delete', child: Text("Delete")),
-              ],
-              onSelected: (val) async {
-                if (val == 'delete') {
-                  await ApiService.deletePlaylist(pl.id);
-                  if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
-                }
-              },
+              leading: Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: pl.coverImage != null
+                      ? null
+                      : const LinearGradient(
+                          colors: [Nocturne.primaryContainer, Nocturne.primary]),
+                  color: pl.coverImage != null ? Nocturne.surfaceHighest : null,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: pl.coverImage != null
+                    ? Image.network(pl.coverImage!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.queue_music_rounded, color: Colors.white, size: 24))
+                    : const Icon(Icons.queue_music_rounded, color: Colors.white, size: 24),
+              ),
+              title: Text(pl.name,
+                  style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
+              subtitle: Text("${pl.songCount} songs",
+                  style: const TextStyle(color: Nocturne.onSurfaceVariant, fontSize: 13)),
+              trailing: PopupMenuButton(
+                icon: const Icon(Icons.more_vert_rounded, color: Nocturne.onSurfaceVariant),
+                color: Nocturne.surfaceHigh,
+                itemBuilder: (ctx) => [
+                  const PopupMenuItem(value: 'delete', child: Text("Delete")),
+                ],
+                onSelected: (val) async {
+                  if (val == 'delete') {
+                    await ApiService.deletePlaylist(pl.id);
+                    if (mounted) {
+                      Provider.of<LibraryProvider>(context, listen: false).refreshData();
+                    }
+                  }
+                },
+              ),
             ),
           ),
         );
@@ -455,15 +474,16 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceColor,
-        title: const Text("New Playlist"),
+        backgroundColor: Nocturne.surfaceHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("New Playlist", style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           autofocus: true,
           style: const TextStyle(color: Colors.white),
           decoration: const InputDecoration(
             hintText: "Playlist name",
-            hintStyle: TextStyle(color: Colors.white38),
+            hintStyle: TextStyle(color: Nocturne.outline),
           ),
         ),
         actions: [
@@ -476,7 +496,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                 if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
               }
             },
-            child: const Text("Create"),
+            child: const Text("Create", style: TextStyle(color: Nocturne.primary)),
           ),
         ],
       ),
@@ -488,56 +508,57 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: kSurfaceColor,
+      backgroundColor: Nocturne.surfaceHigh,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Container(
+      builder: (ctx) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Row(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: song.coverArt != null
-                      ? Image.network(song.coverArt!, width: 50, height: 50, fit: BoxFit.cover)
-                      : Container(width: 50, height: 50, color: Colors.white10),
-                ),
+                CoverArt(song: song, size: 50, radius: 10),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(song.title, style: const TextStyle(fontWeight: FontWeight.bold), maxLines: 1, overflow: TextOverflow.ellipsis),
-                      Text(song.artist, style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                      Text(song.title,
+                          style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text(song.artist,
+                          style: const TextStyle(
+                              color: Nocturne.onSurfaceVariant, fontSize: 13)),
+                      SongBadges(song: song, compact: true),
                     ],
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
-            const Divider(color: Colors.white12),
+            const SizedBox(height: 16),
+            const Divider(color: Nocturne.border),
             ListTile(
-              leading: const Icon(Icons.playlist_add, color: kPrimaryColor),
-              title: const Text("Add to Playlist"),
+              leading: const Icon(Icons.playlist_add_rounded, color: Nocturne.primary),
+              title: const Text("Add to Playlist", style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showAddToPlaylistSheet(song, library.playlists);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.edit, color: Colors.blue),
-              title: const Text("Rename Song"),
+              leading: const Icon(Icons.edit_rounded, color: Colors.blue),
+              title: const Text("Rename Song", style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showRenameSongDialog(song);
               },
             ),
             ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text("Delete Song"),
+              leading: const Icon(Icons.delete_rounded, color: Colors.red),
+              title: const Text("Delete Song", style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(ctx);
                 _showDeleteConfirmation(song);
@@ -552,26 +573,27 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
   void _showAddToPlaylistSheet(Song song, List<Playlist> playlists) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: kSurfaceColor,
+      backgroundColor: Nocturne.surfaceHigh,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Container(
+      builder: (ctx) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Add "${song.title}" to playlist',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
             const SizedBox(height: 16),
             if (playlists.isEmpty)
               const Padding(
                 padding: EdgeInsets.all(20),
-                child: Text("No playlists yet. Create one first!", style: TextStyle(color: Colors.white54)),
+                child: Text("No playlists yet. Create one first!",
+                    style: TextStyle(color: Nocturne.onSurfaceVariant)),
               )
             else
-              Expanded(
+              Flexible(
                 child: ListView.builder(
                     shrinkWrap: true,
                     itemCount: playlists.length,
@@ -582,20 +604,27 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: kPrimaryColor.withOpacity(0.2),
+                            color: Nocturne.primaryContainer.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.playlist_play, color: kPrimaryColor),
+                          child: const Icon(Icons.queue_music_rounded,
+                              color: Nocturne.primary),
                         ),
-                        title: Text(pl.name),
-                        subtitle: Text("${pl.songCount} songs", style: const TextStyle(color: Colors.white54, fontSize: 12)),
+                        title: Text(pl.name, style: const TextStyle(color: Colors.white)),
+                        subtitle: Text("${pl.songCount} songs",
+                            style: const TextStyle(
+                                color: Nocturne.onSurfaceVariant, fontSize: 12)),
                         onTap: () async {
                           await ApiService.addSongToPlaylist(pl.id, song.id);
                           Navigator.pop(ctx);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text("Added to ${pl.name}"), backgroundColor: kPrimaryColor),
+                            SnackBar(
+                                content: Text("Added to ${pl.name}"),
+                                backgroundColor: Nocturne.primaryContainer),
                           );
-                          if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
+                          if (mounted) {
+                            Provider.of<LibraryProvider>(context, listen: false).refreshData();
+                          }
                         },
                       );
                     }),
@@ -607,8 +636,9 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
                   Navigator.pop(ctx);
                   _showCreatePlaylistDialog();
                 },
-                icon: const Icon(Icons.add),
-                label: const Text("Create New Playlist"),
+                icon: const Icon(Icons.add_rounded, color: Nocturne.primary),
+                label: const Text("Create New Playlist",
+                    style: TextStyle(color: Nocturne.primary)),
               ),
             ),
           ],
@@ -624,21 +654,26 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceColor,
-        title: const Text("Rename Song"),
+        backgroundColor: Nocturne.surfaceHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Rename Song", style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: titleController,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: "Title", labelStyle: TextStyle(color: Colors.white54)),
+              decoration: const InputDecoration(
+                  labelText: "Title",
+                  labelStyle: TextStyle(color: Nocturne.onSurfaceVariant)),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: artistController,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(labelText: "Artist", labelStyle: TextStyle(color: Colors.white54)),
+              decoration: const InputDecoration(
+                  labelText: "Artist",
+                  labelStyle: TextStyle(color: Nocturne.onSurfaceVariant)),
             ),
           ],
         ),
@@ -654,10 +689,10 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               Navigator.pop(ctx);
               if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Song updated"), backgroundColor: Colors.green),
+                const SnackBar(content: Text("Song updated")),
               );
             },
-            child: const Text("Save"),
+            child: const Text("Save", style: TextStyle(color: Nocturne.primary)),
           ),
         ],
       ),
@@ -668,9 +703,11 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: kSurfaceColor,
-        title: const Text("Delete Song?"),
-        content: Text('Are you sure you want to delete "${song.title}"?'),
+        backgroundColor: Nocturne.surfaceHigh,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Delete Song?", style: TextStyle(color: Colors.white)),
+        content: Text('Are you sure you want to delete "${song.title}"?',
+            style: const TextStyle(color: Nocturne.onSurfaceVariant)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
           TextButton(
@@ -679,7 +716,7 @@ class _LibraryScreenState extends State<LibraryScreen> with SingleTickerProvider
               Navigator.pop(ctx);
               if (mounted) Provider.of<LibraryProvider>(context, listen: false).refreshData();
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Song deleted"), backgroundColor: Colors.red),
+                const SnackBar(content: Text("Song deleted")),
               );
             },
             child: const Text("Delete", style: TextStyle(color: Colors.red)),

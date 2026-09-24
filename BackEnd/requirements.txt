@@ -17,3 +17,7 @@ librosa
 faiss-cpu
 # Tests (BackEnd/tests)
 pytest
+
+
+# Search & Metadata Fallbacks
+duckduckgo-search

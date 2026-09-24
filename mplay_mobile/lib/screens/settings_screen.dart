@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import '../theme/nocturne.dart';
 import '../constants.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -119,7 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final pad = Layout.horizontalPadding(context);
 
     return Scaffold(
-      backgroundColor: kBackgroundColor,
+      backgroundColor: Nocturne.background,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -130,7 +131,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
+          ? const Center(child: CircularProgressIndicator(color: Nocturne.primaryContainer))
           : SingleChildScrollView(
               padding: EdgeInsets.all(pad),
               child: Column(
@@ -139,7 +140,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   Container(
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: kSurfaceColor,
+                      color: Nocturne.surfaceLow,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Column(
@@ -188,9 +189,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     decoration: InputDecoration(
                       hintText: 'lazyio.duckdns.org',
                       hintStyle: const TextStyle(color: Colors.white30),
-                      prefixIcon: const Icon(Icons.dns, color: Colors.deepPurpleAccent),
+                      prefixIcon: const Icon(Icons.dns, color: Nocturne.primary),
                       filled: true,
-                      fillColor: kSurfaceColor,
+                      fillColor: Nocturne.surfaceLow,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -210,9 +211,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     decoration: InputDecoration(
                       hintText: 'Enter port from Telegram',
                       hintStyle: const TextStyle(color: Colors.white30, fontSize: 16),
-                      prefixIcon: const Icon(Icons.numbers, color: Colors.deepPurpleAccent),
+                      prefixIcon: const Icon(Icons.numbers, color: Nocturne.primary),
                       filled: true,
-                      fillColor: kSurfaceColor,
+                      fillColor: Nocturne.surfaceLow,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide.none,
@@ -260,7 +261,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ElevatedButton(
                     onPressed: _isSaving ? null : _saveSettings,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurpleAccent,
+                      backgroundColor: Nocturne.primary,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),

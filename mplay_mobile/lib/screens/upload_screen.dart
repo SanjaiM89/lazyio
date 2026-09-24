@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import '../api_service.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import '../widgets/nocturne_widgets.dart';
+import 'search_screen.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -51,7 +53,7 @@ class _UploadScreenState extends State<UploadScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Upload Successful'), backgroundColor: Colors.green),
+        const SnackBar(content: Text('Upload Successful')),
       );
     } catch (e) {
       setState(() => _statusMessage = "Error: $e");
@@ -66,115 +68,122 @@ class _UploadScreenState extends State<UploadScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final pad = Layout.horizontalPadding(context);
-    final topPad = Layout.topPadding(context);
-    final isTablet = Layout.isTablet(context);
+    final isTablet = MediaQuery.of(context).size.width >= 900;
 
     return Scaffold(
-      backgroundColor: kBackgroundColor,
-      body: Container(
-        padding: EdgeInsets.fromLTRB(pad, topPad, pad, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Upload to Telegram",
-              style: TextStyle(fontSize: isTablet ? 38 : 28, fontWeight: FontWeight.w800, letterSpacing: -1),
-            ),
-            const SizedBox(height: 8),
-            const Text("Files go straight to your Telegram channel library", style: TextStyle(color: Colors.white54)),
-            const SizedBox(height: 32),
-
-            // Upload Area
-            GestureDetector(
-              onTap: _uploading ? null : _pickFiles,
-              child: Container(
-                height: 200,
-                decoration: BoxDecoration(
-                  color: kSurfaceColor,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.cloud_upload_outlined, size: 60, color: _uploading ? Colors.white38 : kPrimaryColor),
-                      const SizedBox(height: 16),
-                      Text(
-                        _uploading ? "Uploading..." : "Tap to Select Files",
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                      ),
-                      if (!_uploading)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text("Supports MP3, FLAC, WAV", style: TextStyle(color: Colors.white38)),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-            if (_statusMessage != null) ...[
-              const SizedBox(height: 16),
-              Center(
-                child: Text(_statusMessage!,
-                    style: TextStyle(color: _statusMessage!.startsWith("Error") ? Colors.red : Colors.green)),
-              ),
-            ],
-
-            const SizedBox(height: 24),
-
-            // File List
-            if (_files.isNotEmpty) ...[
-              const Text("Selected Files", style: TextStyle(fontWeight: FontWeight.bold)),
+      backgroundColor: Nocturne.background,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("Upload to Telegram",
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+              const SizedBox(height: 4),
+              const Text("Files go straight to your Telegram channel library",
+                  style: TextStyle(fontSize: 13, color: Nocturne.onSurfaceVariant)),
               const SizedBox(height: 12),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: _files.length,
-                  itemBuilder: (context, index) {
-                    final file = _files[index];
-                    return Container(
+              TopSearchBar(
+                onSubmit: (q) => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SearchScreen(initialQuery: q))),
+              ),
+              const SizedBox(height: 12),
+              GestureDetector(
+                onTap: _uploading ? null : _pickFiles,
+                child: Container(
+                  height: 200,
+                  decoration: BoxDecoration(
+                    color: Nocturne.surfaceLow,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Nocturne.border),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.cloud_upload_outlined,
+                            size: 56,
+                            color: _uploading ? Nocturne.outline : Nocturne.primary),
+                        const SizedBox(height: 14),
+                        Text(
+                          _uploading ? "Uploading..." : "Tap to Select Files",
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 17, color: Colors.white),
+                        ),
+                        if (!_uploading)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 6),
+                            child: Text("Supports MP3, FLAC, WAV",
+                                style: TextStyle(color: Nocturne.outline, fontSize: 12)),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              if (_statusMessage != null) ...[
+                const SizedBox(height: 14),
+                Center(
+                  child: Text(_statusMessage!,
+                      style: TextStyle(
+                          color: _statusMessage!.startsWith("Error")
+                              ? Colors.redAccent
+                              : Nocturne.primary,
+                          fontSize: 13)),
+                ),
+              ],
+              const SizedBox(height: 20),
+              if (_files.isNotEmpty) ...[
+                const SectionHeader(title: 'Selected Files'),
+                ..._files.map((file) => Container(
                       margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: kSurfaceColor,
+                      child: Material(
+                        color: Nocturne.surfaceLow,
                         borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ListTile(
-                        leading: const Icon(Icons.audio_file, color: Colors.white54),
-                        title: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text("${(file.size / 1024 / 1024).toStringAsFixed(2)} MB",
-                            style: const TextStyle(fontSize: 12, color: Colors.white38)),
-                        trailing: IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white38),
-                          onPressed: () => _removeFile(file),
+                        child: ListTile(
+                          leading: const Icon(Icons.audio_file_rounded,
+                              color: Nocturne.onSurfaceVariant),
+                          title: Text(file.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 14)),
+                          subtitle: Text(
+                              "${(file.size / 1024 / 1024).toStringAsFixed(2)} MB",
+                              style: const TextStyle(fontSize: 12, color: Nocturne.outline)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.close_rounded,
+                                color: Nocturne.outline),
+                            onPressed: () => _removeFile(file),
+                          ),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: _uploading ? null : _upload,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimaryColor,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    )),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    onPressed: _uploading ? null : _upload,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Nocturne.primaryContainer,
+                      foregroundColor: Nocturne.onPrimary,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(999)),
+                    ),
+                    child: _uploading
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Nocturne.onPrimary))
+                        : const Text("Start Upload",
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                   ),
-                  child: _uploading
-                      ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white))
-                      : const Text("Start Upload", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ),
-              ),
-              const SizedBox(height: 80),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

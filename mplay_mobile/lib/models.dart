@@ -13,6 +13,13 @@ class Song {
   final int? year;
   final String? genre;
   final int playCount;
+  // Spotify-style descriptors from backend analysis (nullable until analyzed).
+  final String? language;
+  final double? bpm;
+  final bool isInstrumental;
+  final bool isLofi;
+  final double? energy;
+  final double? valence;
 
   Song({
     required this.id,
@@ -29,6 +36,12 @@ class Song {
     this.year,
     this.genre,
     this.playCount = 0,
+    this.language,
+    this.bpm,
+    this.isInstrumental = false,
+    this.isLofi = false,
+    this.energy,
+    this.valence,
   });
 
   bool get isVideo => mediaType == 'video' ||
@@ -69,6 +82,12 @@ class Song {
       playCount: (json['play_count'] ?? 0) is int
           ? json['play_count'] ?? 0
           : int.tryParse((json['play_count'] ?? 0).toString()) ?? 0,
+      language: json['language'],
+      bpm: (json['bpm'] is num) ? (json['bpm'] as num).toDouble() : null,
+      isInstrumental: json['is_instrumental'] == true,
+      isLofi: json['is_lofi'] == true,
+      energy: (json['energy'] is num) ? (json['energy'] as num).toDouble() : null,
+      valence: (json['valence'] is num) ? (json['valence'] as num).toDouble() : null,
     );
   }
 
@@ -88,6 +107,12 @@ class Song {
       'year': year,
       'genre': genre,
       'play_count': playCount,
+      'language': language,
+      'bpm': bpm,
+      'is_instrumental': isInstrumental,
+      'is_lofi': isLofi,
+      'energy': energy,
+      'valence': valence,
     };
   }
 }

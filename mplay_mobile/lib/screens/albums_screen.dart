@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../api_service.dart';
 import '../models.dart';
-import '../music_provider.dart';
-import '../constants.dart';
+import '../theme/nocturne.dart';
+import '../widgets/nocturne_widgets.dart';
 import 'album_detail_screen.dart';
+import 'search_screen.dart';
 
 class AlbumsScreen extends StatefulWidget {
   const AlbumsScreen({super.key});
@@ -103,7 +103,7 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Rescan failed: $e'), backgroundColor: Colors.red),
+          SnackBar(content: Text('Rescan failed: $e')),
         );
       }
     }
@@ -114,120 +114,149 @@ class _AlbumsScreenState extends State<AlbumsScreen> {
   Widget build(BuildContext context) {
     if (_selected != null) {
       return Scaffold(
-        backgroundColor: kBackgroundColor,
-        body: AlbumDetailView(
-          album: _selected!,
-          onBack: () => setState(() => _selected = null),
+        backgroundColor: Nocturne.background,
+        body: SafeArea(
+          child: AlbumDetailView(
+            album: _selected!,
+            onBack: () => setState(() => _selected = null),
+          ),
         ),
       );
     }
 
-    final pad = Layout.horizontalPadding(context);
-    final topPad = Layout.topPadding(context);
-    final cols = Layout.gridColumns(context);
-
     return Scaffold(
-      backgroundColor: kBackgroundColor,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(pad, topPad, pad, 16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Albums',
-                      style: TextStyle(
-                        fontSize: isTablet(context) ? 38 : 32,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1,
+      backgroundColor: Nocturne.background,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Albums',
+                          style: TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+                      const SizedBox(height: 2),
+                      Text(
+                        _total > 0 ? '$_total albums' : 'From Telegram channel',
+                        style: const TextStyle(fontSize: 13, color: Nocturne.onSurfaceVariant),
                       ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: _scanning ? null : _rescan,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: Nocturne.border),
+                      ),
+                      child: _scanning
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Nocturne.primary))
+                          : const Text('Rescan',
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Nocturne.primary)),
                     ),
-                    Text(
-                      _total > 0 ? '$_total albums' : 'From Telegram channel',
-                      style: const TextStyle(color: Colors.white54),
-                    ),
-                  ],
-                ),
-                TextButton(
-                  onPressed: _scanning ? null : _rescan,
-                  child: Text(_scanning ? 'Scanning...' : 'Rescan', style: const TextStyle(color: kPrimaryColor)),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
-                : _albums.isEmpty
-                    ? const Center(
-                        child: Text('No albums yet.\nAdd music to the Telegram channel, then rescan.',
-                            textAlign: TextAlign.center, style: TextStyle(color: Colors.white54)),
-                      )
-                    : GridView.builder(
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(pad, 0, pad, 100),
-                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: cols,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.85,
-                        ),
-                        itemCount: _albums.length + (_loadingMore ? 1 : 0),
-                        itemBuilder: (context, i) {
-                          if (i >= _albums.length) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: CircularProgressIndicator(color: kPrimaryColor),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: TopSearchBar(
+                onSubmit: (q) => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => SearchScreen(initialQuery: q))),
+              ),
+            ),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: Nocturne.primary))
+                  : _albums.isEmpty
+                      ? const Center(
+                          child: Text(
+                              'No albums yet.\nAdd music to the Telegram channel, then rescan.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(color: Nocturne.outline)),
+                        )
+                      : GridView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: MediaQuery.of(context).size.width >= 900 ? 5 : 3,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.78,
+                          ),
+                          itemCount: _albums.length + (_loadingMore ? 1 : 0),
+                          itemBuilder: (context, i) {
+                            if (i >= _albums.length) {
+                              return const Center(
+                                child: Padding(
+                                  padding: EdgeInsets.all(24),
+                                  child: CircularProgressIndicator(color: Nocturne.primary),
+                                ),
+                              );
+                            }
+                            final album = _albums[i];
+                            return GestureDetector(
+                              onTap: () => _openAlbum(album),
+                              child: Container(
+                                decoration: Nocturne.glassCard,
+                                padding: const EdgeInsets.all(10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          color: Nocturne.surfaceHighest,
+                                        ),
+                                        clipBehavior: Clip.antiAlias,
+                                        width: double.infinity,
+                                        child: album.coverArt != null
+                                            ? Image.network(album.coverArt!, fit: BoxFit.cover,
+                                                errorBuilder: (_, __, ___) => const Icon(
+                                                    Icons.album_rounded,
+                                                    size: 36,
+                                                    color: Nocturne.outline))
+                                            : const Icon(Icons.album_rounded,
+                                                size: 36, color: Nocturne.outline),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(album.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 13,
+                                            color: Colors.white)),
+                                    Text('${album.songCount} songs',
+                                        style: const TextStyle(
+                                            color: Nocturne.onSurfaceVariant, fontSize: 11)),
+                                  ],
+                                ),
                               ),
                             );
-                          }
-                          final album = _albums[i];
-                          return GestureDetector(
-                            onTap: () => _openAlbum(album),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: kSurfaceColor,
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              padding: const EdgeInsets.all(10),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: Colors.white10,
-                                        image: album.coverArt != null
-                                            ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
-                                            : null,
-                                      ),
-                                      child: album.coverArt == null
-                                          ? const Center(child: Icon(Icons.album, size: 40, color: Colors.white24))
-                                          : null,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                                  Text('${album.songCount} songs', style: const TextStyle(color: Colors.white54, fontSize: 12)),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
+                          },
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
-
-  bool isTablet(BuildContext context) => Layout.isTablet(context);
 }

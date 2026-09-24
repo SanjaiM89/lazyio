@@ -4,7 +4,10 @@ import '../api_service.dart';
 import '../models.dart';
 import '../music_provider.dart';
 import '../providers/video_provider.dart';
+import '../theme/nocturne.dart';
 import '../constants.dart';
+import '../widgets/nocturne_widgets.dart';
+import '../widgets/song_tile.dart';
 import 'album_detail_screen.dart';
 
 class ArtistDetailScreen extends StatefulWidget {
@@ -46,12 +49,14 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackgroundColor,
+      backgroundColor: Nocturne.background,
       appBar: AppBar(backgroundColor: Colors.transparent, elevation: 0),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: kPrimaryColor))
+          ? const Center(child: CircularProgressIndicator(color: Nocturne.primary))
           : _artist == null
-              ? const Center(child: Text('Artist not found', style: TextStyle(color: Colors.white54)))
+              ? const Center(
+                  child: Text('Artist not found',
+                      style: TextStyle(color: Nocturne.onSurfaceVariant)))
               : _buildBody(_artist!),
     );
   }
@@ -73,28 +78,37 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               Container(
                 width: artSize,
                 height: artSize,
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: kSurfaceColor,
-                  image: artist.coverArt != null
-                      ? DecorationImage(image: NetworkImage(artist.coverArt!), fit: BoxFit.cover)
-                      : null,
+                  color: Nocturne.surfaceHighest,
                 ),
-                child: artist.coverArt == null
-                    ? const Center(child: Icon(Icons.person, size: 56, color: Colors.white24))
-                    : null,
+                clipBehavior: Clip.antiAlias,
+                child: artist.coverArt != null
+                    ? Image.network(artist.coverArt!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_rounded, size: 56, color: Nocturne.outline))
+                    : const Icon(Icons.person_rounded, size: 56, color: Nocturne.outline),
               ),
               const SizedBox(width: 20),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Artist', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    const Text('ARTIST',
+                        style: TextStyle(
+                            color: Nocturne.primary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2)),
                     Text(artist.name,
-                        style: TextStyle(fontSize: isTablet ? 28 : 24, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            fontSize: isTablet ? 28 : 24,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white)),
                     Text(
                       '${artist.songCount} songs • ${artist.albumCount} albums • ${_playsLabel(artist.totalPlays)}',
-                      style: const TextStyle(color: Colors.white54, fontSize: 12),
+                      style: const TextStyle(color: Nocturne.onSurfaceVariant, fontSize: 12),
                     ),
                   ],
                 ),
@@ -102,11 +116,11 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
             ],
           ),
           if (artist.albums != null && artist.albums!.isNotEmpty) ...[
-            const SizedBox(height: 28),
-            const Text('Albums', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
+            const SectionHeader(title: 'Albums'),
+            const SizedBox(height: 4),
             SizedBox(
-              height: 180,
+              height: 176,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
                 itemCount: artist.albums!.length,
@@ -120,7 +134,7 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                               MaterialPageRoute(builder: (_) => AlbumDetailScreen(albumId: album.id!)),
                             ),
                     child: Container(
-                      width: 130,
+                      width: 126,
                       margin: const EdgeInsets.only(right: 12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,29 +142,28 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
                           Expanded(
                             child: Container(
                               decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(8),
-                                color: kSurfaceColor,
-                                image: album.coverArt != null
-                                    ? DecorationImage(image: NetworkImage(album.coverArt!), fit: BoxFit.cover)
-                                    : null,
+                                borderRadius: BorderRadius.circular(12),
+                                color: Nocturne.surfaceHighest,
                               ),
-                              child: album.coverArt == null
-                                  ? const Center(child: Icon(Icons.album, size: 32, color: Colors.white24))
-                                  : null,
+                              clipBehavior: Clip.antiAlias,
+                              width: double.infinity,
+                              child: album.coverArt != null
+                                  ? Image.network(album.coverArt!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.album_rounded, color: Nocturne.outline))
+                                  : const Icon(Icons.album_rounded, color: Nocturne.outline),
                             ),
                           ),
                           const SizedBox(height: 6),
-                          Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                          Text(album.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white)),
                           Text('${album.year?.toString() ?? '—'} • ${album.songCount} songs',
-                              style: const TextStyle(color: Colors.white54, fontSize: 11)),
-                          if (album.id != null)
-                            const Row(
-                              children: [
-                                Text('Open', style: TextStyle(color: kPrimaryColor, fontSize: 11)),
-                                Icon(Icons.chevron_right, color: kPrimaryColor, size: 14),
-                              ],
-                            ),
+                              style: const TextStyle(
+                                  color: Nocturne.onSurfaceVariant, fontSize: 11)),
                         ],
                       ),
                     ),
@@ -159,39 +172,19 @@ class _ArtistDetailScreenState extends State<ArtistDetailScreen> {
               ),
             ),
           ],
-          const SizedBox(height: 28),
-          const Text('Songs', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
+          const SizedBox(height: 24),
+          const SectionHeader(title: 'Songs'),
+          const SizedBox(height: 4),
           if (songs.isEmpty)
-            const Text('No songs for this artist.', style: TextStyle(color: Colors.white38))
+            const Text('No songs for this artist.', style: TextStyle(color: Nocturne.outline))
           else
-            ...songs.asMap().entries.map((e) {
-              final i = e.key;
-              final song = e.value;
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Text('${i + 1}', style: const TextStyle(color: Colors.white38)),
-                title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(
-                  [
-                    song.album.isNotEmpty ? song.album : null,
-                    if (song.year != null) song.year.toString(),
-                  ].whereType<String>().join(' • '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white54, fontSize: 12),
-                ),
-                trailing: song.playCount > 0
-                    ? Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: kPrimaryColor.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(_playsLabel(song.playCount),
-                            style: const TextStyle(color: kPrimaryColor, fontSize: 11)),
-                      )
-                    : null,
+            ...songs.map((song) {
+              final playing =
+                  Provider.of<MusicProvider>(context, listen: false).currentSong?.id ==
+                      song.id;
+              return SongTile(
+                song: song,
+                isPlaying: playing,
                 onTap: () => _play(song, songs),
               );
             }),

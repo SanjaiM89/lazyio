@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import 'constants.dart';
+import 'theme/nocturne.dart';
 import 'music_provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/library_screen.dart';
@@ -15,6 +15,10 @@ import 'library_provider.dart';
 import 'providers/video_provider.dart';
 import 'widgets/video_overlay.dart';
 import 'screens/unified_player_screen.dart';
+import 'screens/player_screen.dart';
+import 'screens/tablet/tablet_home_screen.dart';
+import 'screens/tablet/tablet_player_screen.dart';
+import 'widgets/tablet_chrome.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/connection_screen.dart';
 import 'screens/settings_screen.dart';
@@ -63,45 +67,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'mPlay',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark().copyWith(
-        scaffoldBackgroundColor: kBackgroundColor,
-        primaryColor: kPrimaryColor,
-        textTheme: () {
-          final base = GoogleFonts.outfitTextTheme(Theme.of(context).brightness == Brightness.dark
-              ? ThemeData.dark().textTheme
-              : ThemeData().textTheme);
-          const fallback = ['Noto Sans Tamil', 'Latha', 'Vijaya', '.SF NS', 'Roboto'];
-
-          TextStyle withFallback(TextStyle? style) =>
-              (style ?? const TextStyle()).copyWith(fontFamilyFallback: fallback);
-
-          return base.copyWith(
-            displayLarge: withFallback(base.displayLarge),
-            displayMedium: withFallback(base.displayMedium),
-            displaySmall: withFallback(base.displaySmall),
-            headlineLarge: withFallback(base.headlineLarge),
-            headlineMedium: withFallback(base.headlineMedium),
-            headlineSmall: withFallback(base.headlineSmall),
-            titleLarge: withFallback(base.titleLarge),
-            titleMedium: withFallback(base.titleMedium),
-            titleSmall: withFallback(base.titleSmall),
-            bodyLarge: withFallback(base.bodyLarge),
-            bodyMedium: withFallback(base.bodyMedium),
-            bodySmall: withFallback(base.bodySmall),
-            labelLarge: withFallback(base.labelLarge),
-            labelMedium: withFallback(base.labelMedium),
-            labelSmall: withFallback(base.labelSmall),
-          ).apply(
-            bodyColor: Colors.white,
-            displayColor: Colors.white,
-          );
-        }(),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: kPrimaryColor,
-          brightness: Brightness.dark,
-          secondary: kSecondaryColor,
-        ),
-      ),
+      theme: Nocturne.buildTheme(),
       home: home ?? const MainScreen(),
       routes: {
         '/home': (context) => const MainScreen(),
@@ -122,10 +88,16 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   late WebSocketService _wsService;
-  final ScrollController _sidebarScrollController = ScrollController();
 
   Key _libraryKey = UniqueKey();
   Key _homeKey = UniqueKey();
+
+  void _goTab(int index) {
+    // Re-key the Library page so Recently Added / Library always lands
+    // on a fresh Songs list scrolled to the top (newest first).
+    if (index == 1) _libraryKey = UniqueKey();
+    setState(() => _selectedIndex = index);
+  }
 
   @override
   void initState() {
@@ -165,10 +137,14 @@ class _MainScreenState extends State<MainScreen> {
 
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => UnifiedPlayerScreen(
-            song: song,
-            startWithVideo: startWithVideo,
-          ),
+          builder: (context) => startWithVideo
+              ? UnifiedPlayerScreen(
+                  song: song,
+                  startWithVideo: startWithVideo,
+                )
+              : Layout.isTablet(context)
+                  ? const TabletPlayerScreen()
+                  : const PlayerScreen(),
           fullscreenDialog: true,
         ),
       );
@@ -178,22 +154,25 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _wsService.close();
-    _sidebarScrollController.dispose();
     super.dispose();
   }
 
   void _handleNavigation(int index, [String? query]) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    _goTab(index);
   }
 
   Widget _buildCurrentPage() {
     switch (_selectedIndex) {
       case 0:
+        if (Layout.isTablet(context)) {
+          return TabletHomeScreen(
+            onNavigate: _goTab,
+            onOpenPlayer: _openTabletPlayer,
+          );
+        }
         return HomeScreen(key: _homeKey, onNavigate: _handleNavigation);
       case 1:
-        return const LibraryScreen();
+        return LibraryScreen(key: _libraryKey);
       case 2:
         return const AlbumsScreen();
       case 3:
@@ -215,37 +194,53 @@ class _MainScreenState extends State<MainScreen> {
     return _buildPhoneLayout();
   }
 
-  // iPad layout: sidebar + content + mini player
+  void _openTabletPlayer() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const TabletPlayerScreen(),
+        fullscreenDialog: true,
+      ),
+    );
+  }
+
+  // Tablet layout: ONE shared shell for every tab — floating glass
+  // sidebar + content + floating pill dock. The chrome never changes
+  // between pages.
   Widget _buildTabletLayout() {
     return Scaffold(
-      backgroundColor: kBackgroundColor,
-      body: Row(
-        children: [
-          // Sidebar
-          _buildSidebar(),
-          // Divider
-          Container(width: 0.5, color: Colors.white12),
-          // Content
-          Expanded(
-            child: Stack(
-              children: [
-                _buildCurrentPage(),
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: Consumer<MusicProvider>(
-                    builder: (context, music, child) {
-                      if (music.currentSong == null) return const SizedBox.shrink();
-                      return const MiniPlayer();
-                    },
-                  ),
+      backgroundColor: Nocturne.surfaceLowest,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TabletSidebar(
+                activeTab: _selectedIndex,
+                onNavigate: _goTab,
+                onOpenPlayer: _openTabletPlayer,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Stack(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 64),
+                      child: _buildCurrentPage(),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: TabletPillDock(onOpenPlayer: _openTabletPlayer),
+                    ),
+                    const VideoOverlay(),
+                  ],
                 ),
-                const VideoOverlay(),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -286,180 +281,57 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // Apple Music-style sidebar
-  Widget _buildSidebar() {
-    final items = [
-      _SidebarItem(Icons.play_circle_fill, 'Listen Now', 0),
-      _SidebarItem(Icons.library_music_rounded, 'Library', 1),
-      _SidebarItem(Icons.album_rounded, 'Albums', 2),
-      _SidebarItem(Icons.person_rounded, 'Artists', 3),
-      _SidebarItem(Icons.upload_file_rounded, 'Upload to Telegram', 4),
-    ];
-
-    return Container(
-      width: 240,
-      color: kSurfaceColor,
-      child: Column(
-        children: [
-          // App name
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 48, 20, 16),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [kPrimaryColor, Color(0xFFFF6B6B)],
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(Icons.music_note_rounded, color: Colors.white, size: 20),
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'mPlay',
+  // Floating pill bottom nav (phone only): Home / Now Playing / Library.
+  Widget _buildBottomNav() {
+    Widget item(IconData icon, String label, bool active, VoidCallback onTap) {
+      return GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 56, minHeight: 44),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 24, color: active ? Nocturne.primaryContainer : Nocturne.onSurfaceVariant),
+              const SizedBox(height: 1),
+              Text(label,
                   style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.5,
-                    color: Colors.white,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Navigation items
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-                final isSelected = _selectedIndex == item.index;
-                return _buildSidebarTile(item, isSelected);
-              },
-            ),
-          ),
-          // Settings at bottom
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: _buildSidebarTile(
-              _SidebarItem(Icons.settings_rounded, 'Settings', -1),
-              false,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSidebarTile(_SidebarItem item, bool isSelected) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: () {
-            if (item.index == -1) {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              );
-            } else {
-              setState(() => _selectedIndex = item.index);
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? kPrimaryColor.withOpacity(0.15)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Icon(
-                  item.icon,
-                  color: isSelected ? kPrimaryColor : Colors.white54,
-                  size: 22,
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    item.label,
-                    style: TextStyle(
-                      color: isSelected ? Colors.white : Colors.white70,
-                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
-                if (isSelected)
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: kPrimaryColor,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-              ],
-            ),
+                      fontSize: 10,
+                      color: active ? Nocturne.primaryContainer : Nocturne.onSurfaceVariant)),
+            ],
           ),
         ),
-      ),
-    );
-  }
+      );
+    }
 
-  // Apple Music-style bottom nav (phone only)
-  Widget _buildBottomNav() {
+    void openNowPlaying() {
+      if (Provider.of<MusicProvider>(context, listen: false).currentSong == null) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const PlayerScreen(), fullscreenDialog: true),
+      );
+    }
+
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C1C1E),
-        border: Border(top: BorderSide(color: Colors.white12, width: 0.3)),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color.fromRGBO(29, 27, 30, 0.9),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Nocturne.surfaceHighest.withOpacity(0.6)),
+        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 24, offset: Offset(0, 10))],
       ),
       child: SafeArea(
-        child: BottomNavigationBar(
-          currentIndex: _selectedIndex,
-          onTap: (index) => setState(() => _selectedIndex = index),
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.transparent,
-          selectedItemColor: kPrimaryColor,
-          unselectedItemColor: Colors.white38,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.play_circle_outline_rounded),
-              activeIcon: Icon(Icons.play_circle_fill),
-              label: 'Listen Now',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.library_music_outlined),
-              activeIcon: Icon(Icons.library_music_rounded),
-              label: 'Library',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.album_outlined),
-              activeIcon: Icon(Icons.album_rounded),
-              label: 'Albums',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline_rounded),
-              activeIcon: Icon(Icons.person_rounded),
-              label: 'Artists',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.upload_file_outlined),
-              activeIcon: Icon(Icons.upload_file_rounded),
-              label: 'Upload',
-            ),
+        top: false,
+        minimum: EdgeInsets.zero,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            item(Icons.home_rounded, 'Home', _selectedIndex == 0,
+                () => _goTab(0)),
+            item(Icons.play_circle_outline_rounded, 'Now Playing', false, openNowPlaying),
+            item(Icons.library_music_rounded, 'Library', _selectedIndex == 1,
+                () => _goTab(1)),
           ],
         ),
       ),
@@ -467,10 +339,3 @@ class _MainScreenState extends State<MainScreen> {
   }
 }
 
-class _SidebarItem {
-  final IconData icon;
-  final String label;
-  final int index;
-
-  _SidebarItem(this.icon, this.label, this.index);
-}
