@@ -309,7 +309,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ios-packages
-          path: mplay-*-ios-unsigned.ipa
+          path: mplay_mobile/mplay-*-ios-unsigned.ipa
 
   publish:
     name: Publish GitHub Release
