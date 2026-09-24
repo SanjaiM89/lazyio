@@ -15,14 +15,19 @@ Rectangle {
 
     color: "transparent"; clip: true
 
-    Component.onCompleted: {
-        Api.get("/playlists/" + playlistId, {}, function (res) {
+    function load() {
+        if (root.playlistId === "") return
+        root.loading = true; root.playlist = null; root.songs = []
+        Api.get("/playlists/" + root.playlistId, {}, function (res) {
             root.loading = false
             if (!res || !res.ok) return
             root.playlist = res.data
             root.songs = res.data.songs || []
         })
     }
+
+    Component.onCompleted: load()
+    onPlaylistIdChanged: load()
 
     Flickable { anchors.fill: parent; anchors.margins: 24; contentHeight: col.height; clip: true
         Column { id: col; width: parent.width; spacing: 20

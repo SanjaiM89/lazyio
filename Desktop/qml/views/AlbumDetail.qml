@@ -15,14 +15,19 @@ Rectangle {
 
     color: "transparent"; clip: true
 
-    Component.onCompleted: {
-        Api.get("/albums/" + albumId, {}, function (res) {
+    function load() {
+        if (root.albumId === "") return
+        root.loading = true; root.album = null; root.songs = []
+        Api.get("/albums/" + root.albumId, {}, function (res) {
             root.loading = false
             if (!res || !res.ok) return
             root.album = res.data
             root.songs = res.data.songs || []
         })
     }
+
+    Component.onCompleted: load()
+    onAlbumIdChanged: load()
 
     Flickable { anchors.fill: parent; anchors.margins: 24; contentHeight: col.height; clip: true
         Column { id: col; width: parent.width; spacing: 20
@@ -35,12 +40,12 @@ Rectangle {
             }
             // hero
             Row { width: parent.width; spacing: 24
-                CoverImage { width: 220; height: 220; src: root.album ? (root.album.coverArt || "") : ""; radius: 16 }
+                CoverImage { width: 220; height: 220; src: root.album ? (root.album.cover_art || root.album.coverArt || "") : ""; radius: 16 }
                 Column { anchors.verticalCenter: parent.verticalCenter; width: parent.width - 260; spacing: 10
                     Text { font.family: Theme.fontMain; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.onVariant; text: "Album" }
-                    Text { width: parent.width; wrapMode: Text.WordWrap; font.family: Theme.fontMain; font.pixelSize: 28; font.weight: Font.DemiBold; color: Theme.onSurface; text: root.album ? (root.album.title || "Unknown") : "" }
+                    Text { width: parent.width; wrapMode: Text.WordWrap; font.family: Theme.fontMain; font.pixelSize: 28; font.weight: Font.DemiBold; color: Theme.onSurface; text: root.album ? (root.album.name || root.album.title || "Unknown") : "" }
                     Text { font.family: Theme.fontMain; font.pixelSize: 14; color: Theme.onVariant; text: root.album ? (root.album.artist || "—") : "" }
-                    Text { font.family: "monospace"; font.pixelSize: 12; color: Theme.outline; text: root.album ? (root.songs.length + " tracks · " + Theme.fmtTime(root.album.duration || 0)) : "" }
+                    Text { font.family: "monospace"; font.pixelSize: 12; color: Theme.outline; text: root.album ? (root.songs.length + " tracks") : "" }
                     Rectangle { width: 40; height: 40; radius: 20; color: Theme.primary
                         Text { anchors.centerIn: parent; font.family: Theme.fontIcon; font.pixelSize: 22; color: Theme.onPrimary; text: "play_arrow" }
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: { if (root.songs.length > 0) root.playRequested(root.songs[0], root.songs, 0) } }

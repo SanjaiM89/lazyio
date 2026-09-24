@@ -15,14 +15,19 @@ Rectangle {
 
     color: "transparent"; clip: true
 
-    Component.onCompleted: {
-        Api.get("/artists/" + encodeURIComponent(name), {}, function (res) {
+    function load() {
+        if (root.name === "") return
+        root.loading = true; root.artist = null; root.songs = []
+        Api.get("/artists/" + encodeURIComponent(root.name), {}, function (res) {
             root.loading = false
             if (!res || !res.ok) return
             root.artist = res.data
             root.songs = res.data.songs || []
         })
     }
+
+    Component.onCompleted: load()
+    onNameChanged: load()
 
     Flickable { anchors.fill: parent; anchors.margins: 24; contentHeight: col.height; clip: true
         Column { id: col; width: parent.width; spacing: 20
@@ -33,7 +38,7 @@ Rectangle {
                 Text { font.family: Theme.fontMain; font.pixelSize: 13; color: Theme.primary; text: "Artists"; anchors.verticalCenter: parent.verticalCenter }
             }
             Row { width: parent.width; spacing: 24
-                CoverImage { width: 220; height: 220; src: root.artist ? (root.artist.coverArt || "") : ""; radius: 16; icon: "person" }
+                CoverImage { width: 220; height: 220; src: root.artist ? (root.artist.cover_art || root.artist.coverArt || "") : ""; radius: 16; icon: "person" }
                 Column { anchors.verticalCenter: parent.verticalCenter; spacing: 10
                     Text { font.family: Theme.fontMain; font.pixelSize: 11; font.weight: Font.DemiBold; color: Theme.onVariant; text: "Artist" }
                     Text { font.family: Theme.fontMain; font.pixelSize: 28; font.weight: Font.DemiBold; color: Theme.onSurface; text: root.name }
